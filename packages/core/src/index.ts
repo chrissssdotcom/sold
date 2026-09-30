@@ -6,3 +6,4 @@ export * from './resilience/circuit-breaker';
 export * from './jobs/queue';
 export * from './version';
 export * from './jobs/memory-queue';
+export * from './money';
