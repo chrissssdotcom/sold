@@ -9,7 +9,7 @@ export default defineConfig({
           name: 'integration',
           include: ['src/**/*.int.test.ts'],
           testTimeout: 60_000,
-          hookTimeout: 120_000,
+          hookTimeout: 300_000,
           fileParallelism: false,
         },
       },

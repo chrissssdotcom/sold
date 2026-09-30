@@ -50,7 +50,7 @@ export async function createTestRedis(): Promise<TestRedis | null> {
   const ok = await Promise.race([ready, failed]);
   if (ok === null) return null;
   const kill = async () => {
-    if (child.exitCode === null) {
+    if (child.exitCode === null && child.signalCode === null) {
       child.kill('SIGKILL');
       await new Promise((r) => child.once('exit', r));
     }

@@ -5,12 +5,26 @@ import { MemoryCacheStore, RedisCacheStore, type CacheStore } from './store';
 /**
  * Shared Next.js cache handler (ISR / data cache / route handler cache), Section 8A.2.
  *
- * - Consistent across instances: entries and tag revalidation times live in Redis.
- * - Tag revalidation is a timestamp per tag; an entry older than any of its tags' timestamp is a miss.
- * - Fail-open: any store error on read/write is a cache miss / no-op, never a request failure.
- *   `revalidateTag` failures are surfaced (an invalidation that silently did nothing is a bug).
- * - Jittered TTLs so entries written together do not expire together (stampede prevention).
+ * What Next actually passes (verified against next@16 `incremental-cache`, and by the end-to-end test):
+ *  - FETCH entries carry their tags in `ctx.tags`.
+ *  - APP_PAGE / APP_ROUTE entries do NOT: their tags are in `value.headers['x-next-cache-tags']`, and on `get`
+ *    the implicit path tags of the requested route arrive as `ctx.softTags`. Next's own staleness check for
+ *    pages reads a process-local manifest a custom handler never updates, so THIS handler must decide.
+ *
+ * Behaviour:
+ *  - Consistent across instances: entries and tag revalidation times live in Redis; freshness is decided
+ *    inside Redis in one round trip.
+ *  - An entry is a miss when any of its tags (header + ctx + soft) was revalidated at or after it was rendered.
+ *  - Timestamps come from the store clock and use the time the render STARTED (the miss), so an invalidation
+ *    that lands while a page is rendering is never lost, and skewed instance clocks cannot break ordering.
+ *  - Fail-open: a store error on read/write is a miss / no-op. `revalidateTag` failures are surfaced.
+ *  - TTL follows `cacheControl.expire` (else 7 days), jittered so entries written together expire apart.
+ *
+ * Known limits (see docs/scaling.md): `revalidateTag`'s stale window (`durations`) is treated as immediate
+ * expiry; and Next keeps route cache-control (`revalidate`) per process, so a route that was not prerendered
+ * at build re-renders once on the first hit per instance.
  */
+export const NEXT_CACHE_TAGS_HEADER = 'x-next-cache-tags';
 
 type CacheLogger = Record<
   'warn' | 'error',
@@ -23,8 +37,9 @@ type CacheLogger = Record<
  */
 function jsonLogger(base: Record<string, unknown>): CacheLogger {
   const emit = (level: string) => (fields: Record<string, unknown> | string, message?: string) => {
-    const body = typeof fields === 'string' ? { msg: fields } : { ...fields, msg: message };
-    if (body && 'err' in body && body.err instanceof Error) body.err = body.err.message;
+    const body: Record<string, unknown> =
+      typeof fields === 'string' ? { msg: fields } : { ...fields, msg: message };
+    if (body.err instanceof Error) body.err = body.err.message;
     console.error(JSON.stringify({ level, time: new Date().toISOString(), ...base, ...body }));
   };
   return { warn: emit('warn'), error: emit('error') };
@@ -36,69 +51,115 @@ interface CacheEntry {
   tags: string[];
 }
 
+export interface GetContext {
+  kind?: string;
+  tags?: string[];
+  softTags?: string[];
+}
+
+export interface SetContext {
+  tags?: string[];
+  cacheControl?: { revalidate?: number | false; expire?: number };
+}
+
 export interface HandlerDeps {
   store: CacheStore;
   logger?: CacheLogger;
-  now?: () => number;
   random?: () => number;
   maxTtlSeconds?: number;
+  /** How long a render-start timestamp is remembered while waiting for the matching `set`. */
+  pendingTtlMs?: number;
+}
+
+/** Tags a page/route entry carries in its response headers. */
+export function tagsFromValue(value: unknown): string[] {
+  const headers = (value as { headers?: Record<string, unknown> } | null | undefined)?.headers;
+  const raw = headers?.[NEXT_CACHE_TAGS_HEADER];
+  return typeof raw === 'string' && raw.length > 0 ? raw.split(',') : [];
 }
 
 export class SoldCacheHandlerCore {
   private readonly store: CacheStore;
   private readonly log: CacheLogger | undefined;
-  private readonly now: () => number;
   private readonly random: () => number;
   private readonly maxTtl: number;
+  private readonly pendingTtlMs: number;
+  /** key -> store-clock time of the last miss: the moment the render that follows started. Bounded. */
+  private readonly renderStarted = new Map<string, number>();
+  private static readonly MAX_PENDING = 10_000;
 
   constructor(deps: HandlerDeps) {
     this.store = deps.store;
     this.log = deps.logger;
-    this.now = deps.now ?? Date.now;
     this.random = deps.random ?? Math.random;
     this.maxTtl = deps.maxTtlSeconds ?? 7 * 24 * 3600;
+    this.pendingTtlMs = deps.pendingTtlMs ?? 120_000;
   }
 
-  async get(key: string): Promise<CacheEntry | null> {
+  async get(key: string, ctx: GetContext = {}): Promise<CacheEntry | null> {
     try {
-      const raw = await this.store.get(key);
-      if (!raw) return null;
-      const entry = deserialize<CacheEntry>(raw);
-      const times = await this.store.getTagTimes(entry.tags);
-      if (times.some((t) => t >= entry.lastModified)) return null;
-      return entry;
+      const extra = [...(ctx.tags ?? []), ...(ctx.softTags ?? [])];
+      const raw = await this.store.get(key, extra);
+      if (raw) return deserialize<CacheEntry>(raw);
     } catch (error) {
       this.log?.warn({ err: error, key }, 'cache get failed; treating as miss');
-      return null;
     }
+    this.markRenderStart(key);
+    return null;
   }
 
-  async set(key: string, data: unknown, ctx: { tags?: string[] } = {}): Promise<void> {
+  async set(key: string, data: unknown, ctx: SetContext = {}): Promise<void> {
     try {
       if (data === null || data === undefined) {
         await this.store.del(key);
         return;
       }
-      const entry: CacheEntry = { value: data, lastModified: this.now(), tags: ctx.tags ?? [] };
-      await this.store.set(key, serialize(entry), this.jitteredTtl());
+      const tags = [...new Set([...(ctx.tags ?? []), ...tagsFromValue(data)])];
+      // The render began at the miss; if we never saw one (e.g. a prerender at build), use "now".
+      const lastModified = this.takeRenderStart(key) ?? this.store.now();
+      const entry: CacheEntry = { value: data, lastModified, tags };
+      await this.store.set(
+        key,
+        { payload: serialize(entry), lastModified, tags },
+        this.ttlFor(ctx),
+      );
     } catch (error) {
       this.log?.warn({ err: error, key }, 'cache set failed; entry not stored');
     }
   }
 
-  async revalidateTag(tags: unknown): Promise<void> {
+  async revalidateTag(tags: unknown, _durations?: unknown): Promise<void> {
     const list = [tags].flat().filter((t): t is string => typeof t === 'string' && t.length > 0);
     if (list.length === 0) return;
     // Not swallowed: callers (publish, price change) must know the invalidation did not happen.
-    await this.store.setTagTimes(list, this.now());
+    await this.store.revalidateTags(list, this.store.now());
   }
 
   resetRequestCache(): void {
     // No per-request memoisation layer: the shared store is the source of truth.
   }
 
-  private jitteredTtl(): number {
-    return Math.round(this.maxTtl * (0.9 + this.random() * 0.2));
+  private markRenderStart(key: string): void {
+    if (this.renderStarted.size >= SoldCacheHandlerCore.MAX_PENDING) {
+      const oldest = this.renderStarted.keys().next().value;
+      if (oldest !== undefined) this.renderStarted.delete(oldest);
+    }
+    // Keep the EARLIEST miss: concurrent requests for the same key all started before the eventual `set`.
+    if (!this.renderStarted.has(key)) this.renderStarted.set(key, this.store.now());
+  }
+
+  private takeRenderStart(key: string): number | undefined {
+    const started = this.renderStarted.get(key);
+    this.renderStarted.delete(key);
+    if (started === undefined || this.store.now() - started > this.pendingTtlMs) return undefined;
+    return started;
+  }
+
+  private ttlFor(ctx: SetContext): number {
+    const expire = ctx.cacheControl?.expire;
+    const base =
+      typeof expire === 'number' && expire > 0 ? Math.min(expire, this.maxTtl) : this.maxTtl;
+    return Math.max(60, Math.round(base * (0.9 + this.random() * 0.2)));
   }
 }
 
@@ -137,14 +198,14 @@ export default class SoldCacheHandler {
     this.core = shared;
   }
 
-  get(key: string) {
-    return this.core.get(key);
+  get(key: string, ctx?: GetContext) {
+    return this.core.get(key, ctx);
   }
-  set(key: string, data: unknown, ctx?: { tags?: string[] }) {
+  set(key: string, data: unknown, ctx?: SetContext) {
     return this.core.set(key, data, ctx);
   }
-  revalidateTag(tags: unknown) {
-    return this.core.revalidateTag(tags);
+  revalidateTag(tags: unknown, durations?: unknown) {
+    return this.core.revalidateTag(tags, durations);
   }
   resetRequestCache() {
     this.core.resetRequestCache();

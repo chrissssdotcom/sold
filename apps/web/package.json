@@ -13,7 +13,8 @@
     "predev": "node scripts/build.mjs",
     "prebuild": "node scripts/build.mjs",
     "test:integration": "vitest run --project integration",
-    "worker": "node scripts/build.mjs && dotenv -e ../../.env -- node .generated/worker.cjs"
+    "worker": "node scripts/build.mjs && dotenv -e ../../.env -- node .generated/worker.cjs",
+    "pretest:integration": "node scripts/build.mjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
