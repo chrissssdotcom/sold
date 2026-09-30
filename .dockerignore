@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/.generated
+**/dist
+**/coverage
+.git
+.env
+.env.*
+!.env.example
+ops
+docs
+extensions
+environments
+*.md
+.terraform

@@ -1,0 +1,21 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: sold-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+  # Reporting schema (Phase 7). Read-only role `sold_grafana`, created by migration, replica-first.
+  - name: Sold Reporting
+    uid: sold-reporting
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: pgbouncer:6432
+    user: sold_grafana
+    secureJsonData:
+      password: ${GRAFANA_DB_PASSWORD}
+    jsonData:
+      database: sold
+      sslmode: disable
+      postgresVersion: 1600

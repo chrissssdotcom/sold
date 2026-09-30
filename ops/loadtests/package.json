@@ -1,0 +1,14 @@
+{
+  "name": "@sold/loadtests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "baseline": "k6 run baseline-browse.js"
+  },
+  "devDependencies": {
+    "@types/k6": "^2.3.0",
+    "typescript": "~6.0.3"
+  }
+}

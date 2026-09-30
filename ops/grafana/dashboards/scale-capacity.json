@@ -1,0 +1,421 @@
+{
+  "uid": "sold-scale-capacity",
+  "title": "Scale & Capacity",
+  "tags": [
+    "sold",
+    "scale"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Releases",
+        "enable": true,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "sold-prometheus"
+        },
+        "iconColor": "blue",
+        "expr": "count by (version) (sold_app_info unless sold_app_info offset 5m)",
+        "titleFormat": "Deploy",
+        "textFormat": "{{version}}",
+        "step": "60s"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests per second by route class",
+      "description": "RED: rate. Shedding order under saturation: reporting > admin > account > browse > cart > checkout.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (route_class) (rate(sold_http_requests_total[1m]))",
+          "legendFormat": "{{route_class}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p95 latency by route class",
+      "description": "Design target (event-scale): checkout and cart p95 < 500 ms, p99 < 1.5 s.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, route_class) (rate(sold_http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{route_class}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Error ratio (5xx)",
+      "description": "RED: errors.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (route_class) (rate(sold_http_requests_total{status_class=\"5xx\"}[5m])) / sum by (route_class) (rate(sold_http_requests_total[5m]))",
+          "legendFormat": "{{route_class}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "DB pool saturation",
+      "description": "Any sustained 'waiting' > 0 means the pool is saturated: shed load or add capacity; never just raise the pool.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sold_db_pool_connections{state=\"waiting\"}",
+          "legendFormat": "{{pool}} waiting",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sold_db_pool_connections{state=\"total\"} - ignoring(state) sold_db_pool_connections{state=\"idle\"}",
+          "legendFormat": "{{pool}} busy",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Oldest ready job age vs budget",
+      "description": "Alert on age, not depth. Budget comes from the queue class policy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sold_queue_oldest_job_age_seconds",
+          "legendFormat": "{{queue}} age",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sold_queue_max_age_seconds",
+          "legendFormat": "{{queue}} budget",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Queue depth",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sold_queue_depth",
+          "legendFormat": "{{queue}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Event loop lag p99",
+      "description": "USE: saturation of the Node process.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sold_node_nodejs_eventloop_lag_p99_seconds",
+          "legendFormat": "{{job}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Resident memory",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "sold-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sold_node_process_resident_memory_bytes",
+          "legendFormat": "{{job}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "sold-prometheus"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -14,9 +14,9 @@
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "migrate": "tsx src/cli/migrate.ts",
-    "seed": "tsx src/cli/seed.ts",
-    "lint-migrations": "tsx src/cli/lint-migrations.ts",
+    "migrate": "tsx --env-file-if-exists=../../.env src/cli/migrate.ts",
+    "seed": "tsx --env-file-if-exists=../../.env src/cli/seed.ts",
+    "lint-migrations": "tsx --env-file-if-exists=../../.env src/cli/lint-migrations.ts",
     "generate": "drizzle-kit generate"
   },
   "dependencies": {

@@ -11,7 +11,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@sold/db": "workspace:*",
     "@testcontainers/postgresql": "^12.2.0",
     "pg": "^8.23.0"
   },

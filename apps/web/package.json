@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "dotenv -e ../../.env -- next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "dotenv -e ../../.env -- next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "predev": "node scripts/build.mjs",
     "prebuild": "node scripts/build.mjs",
     "test:integration": "vitest run --project integration",
-    "worker": "node scripts/build.mjs && node .generated/worker.cjs"
+    "worker": "node scripts/build.mjs && dotenv -e ../../.env -- node .generated/worker.cjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -35,6 +35,7 @@
     "@sold/testing": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.2",
     "vitest": "^5.0.3"
   }

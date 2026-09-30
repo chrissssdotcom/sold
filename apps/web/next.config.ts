@@ -25,6 +25,8 @@ export const securityHeaders = [
 ];
 
 const config: NextConfig = {
+  // This repo curates its own AGENTS.md; do not let Next generate agent files.
+  agentRules: false,
   output: 'standalone',
   outputFileTracingRoot: resolve(here, '../..'),
   poweredByHeader: false,

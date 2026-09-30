@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  verify:
+    name: Typecheck, lint, unit, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      # Rejects unsafe (locking / rewriting) migrations before they can reach a hot table.
+      - run: pnpm db:lint-migrations
+      - run: pnpm build
+
+  integration:
+    name: Integration (real Postgres and Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sold
+          POSTGRES_PASSWORD: sold
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sold" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      SOLD_TEST_DATABASE_URL: postgres://sold:sold@localhost:5432/postgres
+      SOLD_TEST_REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:integration
+
+  # `migrate` on an empty database, twice: the second run must be a no-op (idempotent, checksummed journal).
+  migrations:
+    name: Migrate an empty database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sold
+          POSTGRES_PASSWORD: sold
+          POSTGRES_DB: sold
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sold" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://sold:sold@localhost:5432/sold
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm db:migrate | tee /dev/stderr | grep -q "0 applied"
+      - run: pnpm db:seed
+
+  loadtest-smoke:
+    name: k6 smoke (baseline browse)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sold
+          POSTGRES_PASSWORD: sold
+          POSTGRES_DB: sold
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sold" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DATABASE_URL: postgres://sold:sold@localhost:5432/sold
+      REDIS_URL: redis://localhost:6379
+      SOLD_ENVIRONMENT: local
+      PORT: 3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm --filter @sold/web build
+      - name: Start the standalone server
+        run: |
+          cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+          node apps/web/.next/standalone/apps/web/server.js > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:3000/api/health/ready && break || sleep 1; done
+      - uses: grafana/setup-k6-action@v1
+      - name: Baseline browse (thresholds are the pass/fail contract)
+        run: k6 run -e BASE_URL=http://localhost:3000 ops/loadtests/baseline-browse.js
+      - if: failure()
+        run: tail -n 100 server.log
+
+  supply-chain:
+    name: Dependency audit and SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high --prod
+      - uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom.cdx.json
