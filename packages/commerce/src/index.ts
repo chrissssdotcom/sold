@@ -8,3 +8,7 @@ export * from './catalog';
 export * from './hooks';
 export * from './cart';
 export * from './contracts';
+export * from './outbox-relay';
+export * from './pricing';
+export * from './tax';
+export * from './shipping';

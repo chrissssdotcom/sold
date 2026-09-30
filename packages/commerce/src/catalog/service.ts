@@ -1,18 +1,6 @@
 import { z } from 'zod';
 import { Money } from '@sold/core';
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  lt,
-  or,
-  schema,
-  sql,
-  type PrimaryDb,
-  type ReplicaDb,
-} from '@sold/db';
+import { and, asc, desc, eq, inArray, schema, sql, type PrimaryDb, type ReplicaDb } from '@sold/db';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
 import type { DbOrTx } from '../types';
 

@@ -1,6 +1,6 @@
 import { sql } from '@sold/db';
 import { NotFoundError, ValidationError } from '../errors';
-import type { DbOrTx } from '../types';
+import type { DbOrTx, Tx } from '../types';
 import type { InventoryGate } from './gate';
 import type { InventoryReservationStrategy, ReserveResult, StockChange } from './strategy';
 
@@ -80,6 +80,22 @@ export class InventoryService {
         throw new ValidationError('Cannot set on-hand below the quantity already reserved');
     });
     await this.gate?.invalidate([variantId]);
+  }
+
+  /** Return units to stock (order cancelled/refunded after commit, customer return). */
+  async restock(db: DbOrTx, variantId: string, quantity: number): Promise<void> {
+    if (!Number.isInteger(quantity) || quantity <= 0)
+      throw new ValidationError('quantity must be > 0');
+    const res = await db.execute(
+      sql`UPDATE inventory_levels SET on_hand = on_hand + ${quantity} WHERE variant_id = ${variantId} RETURNING variant_id`,
+    );
+    if (res.rows.length === 0) throw new NotFoundError('Inventory level', variantId);
+    await this.gate?.invalidate([variantId]);
+  }
+
+  /** Commit live holds for an owner as a permanent decrement. Must run inside the order transaction. */
+  commit(tx: Tx, ownerRef: string): Promise<StockChange[]> {
+    return this.strategy.commit(tx, ownerRef);
   }
 
   /** Hold every line for `ownerRef`, all-or-nothing, locking variants in a fixed order (no deadlocks). */
