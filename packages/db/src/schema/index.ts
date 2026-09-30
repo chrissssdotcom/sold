@@ -98,3 +98,4 @@ export const extensionSettings = pgTable(
   (t) => [primaryKey({ columns: [t.extension, t.key] })],
 );
 export * from './commerce';
+export * from './storefront';
