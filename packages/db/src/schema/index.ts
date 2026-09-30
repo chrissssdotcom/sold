@@ -70,3 +70,30 @@ export const migrationJournal = pgTable(
   },
   (t) => [primaryKey({ columns: [t.scope, t.name] })],
 );
+
+/** Installed extensions and whether each is enabled on this instance (drives lifecycle hooks). */
+export const extensionRegistry = pgTable('extension_registry', {
+  name: text('name').primaryKey(),
+  version: text('version').notNull(),
+  state: text('state').notNull(),
+  installedAt: timestamp('installed_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  lastEnabledAt: timestamp('last_enabled_at', { withTimezone: true }),
+  lastDisabledAt: timestamp('last_disabled_at', { withTimezone: true }),
+});
+
+/** Extension settings: plain jsonb for non-secrets, envelope-encrypted ciphertext for secrets. */
+export const extensionSettings = pgTable(
+  'extension_settings',
+  {
+    extension: text('extension')
+      .notNull()
+      .references(() => extensionRegistry.name, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    value: jsonb('value'),
+    ciphertext: text('ciphertext'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: text('updated_by').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.extension, t.key] })],
+);

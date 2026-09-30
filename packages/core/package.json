@@ -10,18 +10,26 @@
     "./observability": "./src/observability/index.ts",
     "./resilience": "./src/resilience/circuit-breaker.ts",
     "./traffic": "./src/traffic.ts",
-    "./jobs": "./src/jobs/queue.ts"
+    "./jobs": "./src/jobs/queue.ts",
+    "./extensions": "./src/extensions/index.ts",
+    "./crypto": "./src/crypto/envelope.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration"
   },
   "dependencies": {
+    "@sold/db": "workspace:*",
+    "@sold/extension-sdk": "workspace:*",
     "pino": "^10.3.1",
+    "semver": "^7.8.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@sold/config": "workspace:*"
+    "@sold/config": "workspace:*",
+    "@sold/testing": "workspace:*",
+    "@types/semver": "^7.8.0"
   }
 }

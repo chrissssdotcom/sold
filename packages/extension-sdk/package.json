@@ -1,0 +1,27 @@
+{
+  "name": "@sold/extension-sdk",
+  "version": "0.1.0",
+  "description": "Public API for writing Sold extensions. Semver'd; see CHANGELOG.md.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.3",
+    "semver": "^7.8.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sold/config": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/semver": "^7.8.0",
+    "react": "^19.3.0",
+    "vitest": "^5.0.3"
+  }
+}
