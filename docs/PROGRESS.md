@@ -4,18 +4,18 @@ Live status. Update at every green checkpoint.
 
 ## Status
 
-| Phase | State |
-|---|---|
-| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done |
-| Phase 0: Foundations | in progress |
-| Phase 1: Extension SDK and Base kernel | not started |
-| Phase 2: Commerce core | not started |
-| Phase 3: Payments and multi-currency | not started |
-| Phase 4: Storefront and page builder | not started |
-| Phase 5: Identity and admin | not started |
-| Phase 6: Social and growth | not started |
-| Phase 7: Data and platform | not started |
-| Phase 8: Hardening, scale proof, handover | not started |
+| Phase                                          | State       |
+| ---------------------------------------------- | ----------- |
+| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done        |
+| Phase 0: Foundations                           | in progress |
+| Phase 1: Extension SDK and Base kernel         | not started |
+| Phase 2: Commerce core                         | not started |
+| Phase 3: Payments and multi-currency           | not started |
+| Phase 4: Storefront and page builder           | not started |
+| Phase 5: Identity and admin                    | not started |
+| Phase 6: Social and growth                     | not started |
+| Phase 7: Data and platform                     | not started |
+| Phase 8: Hardening, scale proof, handover      | not started |
 
 ## Phase plan
 
@@ -38,35 +38,43 @@ Ordered so the repo is green after each step.
 Exit criteria: `pnpm i && pnpm typecheck && pnpm lint && pnpm test && pnpm build` green; `docker compose up` gives healthy Postgres/PgBouncer/Redis; `/api/health/ready` returns 200; `terraform validate` passes on all modules; `env:up`/`env:down --verify` demonstrated against a sandbox (or explicitly listed as pending credentials).
 
 ### Phase 1: Extension SDK and Base kernel
+
 Manifest + Zod schema, registry, deterministic load order with semver `requires`, typed event bus (observers via queue, interceptors sync/ordered/timeboxed with bounded pool and hot-path guard), slots, settings (encrypted secrets), per-extension migration journal, service-provider registry with override precedence, ESLint boundary rule, `ext:new` scaffold, `ext:docs`, and a trivial extension exercising every contribution type. Zero-extension and all-extension boot tests.
 
 ### Phase 2: Commerce core
+
 Money, catalog, inventory (atomic conditional decrement + `InventoryReservationStrategy` with Redis fast path), cart, pricing, promotions, tax, shipping, orders, state machines, transactional outbox, idempotent checkout, minimal order-persistence transaction. Concurrent-buyer test (5,000 buyers / 100 units, no oversell).
 
 ### Phase 3: Payments and multi-currency
+
 `PaymentGateway` + contract suite, Stripe adapter, manual gateway, webhook inbox + processing, FX provider/history/staleness, derived and fixed per-currency pricing, two-currency end-to-end checkout.
 
 ### Phase 4: Storefront and page builder
+
 Design system/tokens, blocks, builder (undo/redo, drafts, scheduling, versions), SEO, localisation, search (`SearchProvider`), accounts, cache-first delivery + pre-warm. Perf and a11y budgets.
 
 ### Phase 5: Identity and admin
+
 RBAC + `authorize()`, OIDC, SAML, SCIM, audit log (hash-chained), break-glass, Keycloak integration tests, Entra ID docs.
 
 ### Phase 6: Social and growth
+
 `tiktok-social` (all block types), consent manager, pixel + Events API, reviews extension, lifecycle automation, email templates + `EmailTransport` adapters.
 
 ### Phase 7: Data and platform
+
 `reporting` schema, `sold_grafana` role, dashboards (incl. Scale & Capacity), Prometheus metrics, public API + OpenAPI + webhooks, media library, feature flags, A/B hooks, queue throughput measurement + alternative adapter.
 
 ### Phase 8: Hardening, scale proof, handover
+
 Threat model, security review, full k6/chaos suite and capacity report, waiting room and degradation ladder rehearsal, DB failover/restore drills, sale-readiness dry run, N-1 → N upgrade test, customer creation and promotion through the documented flow, final docs.
 
 ## Decisions log
 
-| Date | Decision | Rationale |
-|---|---|---|
-| 2026-09-30 | `CLAUDE.md` is a one-line pointer (not a symlink) to `AGENTS.md` | Symlinks are fragile on Windows checkouts and some tooling |
-| 2026-09-30 | CLI lives in `packages/cli`, exposed as `pnpm sold` | Section 3 layout lists no CLI package; a dedicated package keeps `core` framework-free |
+| Date       | Decision                                                         | Rationale                                                                              |
+| ---------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 2026-09-30 | `CLAUDE.md` is a one-line pointer (not a symlink) to `AGENTS.md` | Symlinks are fragile on Windows checkouts and some tooling                             |
+| 2026-09-30 | CLI lives in `packages/cli`, exposed as `pnpm sold`              | Section 3 layout lists no CLI package; a dedicated package keeps `core` framework-free |
 
 ## Environment notes / blockers
 

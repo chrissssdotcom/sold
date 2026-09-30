@@ -66,21 +66,21 @@ docs/                adr, runbooks, extending, upgrading, scaling, PROGRESS.md
 
 Run from the repo root. Node LTS, pnpm (via corepack).
 
-| Task | Command |
-|---|---|
-| Install | `pnpm i` |
-| Dev (everything) | `pnpm dev` (after `docker compose up -d`) |
-| Lint | `pnpm lint` |
-| Typecheck | `pnpm typecheck` |
-| Unit tests | `pnpm test` |
-| Integration tests | `pnpm test:integration` (needs Docker for Testcontainers) |
-| E2E | `pnpm test:e2e` |
-| Migrate | `pnpm db:migrate` |
-| Seed | `pnpm db:seed` |
-| Build | `pnpm build` |
-| Migration lint | `pnpm db:lint-migrations` |
-| Format check | `pnpm format:check` |
-| CLI | `pnpm sold <command>` (e.g. `ext:new`, `ext:docs`, `env:up`, `upgrade:check`) |
+| Task              | Command                                                                       |
+| ----------------- | ----------------------------------------------------------------------------- |
+| Install           | `pnpm i`                                                                      |
+| Dev (everything)  | `pnpm dev` (after `docker compose up -d`)                                     |
+| Lint              | `pnpm lint`                                                                   |
+| Typecheck         | `pnpm typecheck`                                                              |
+| Unit tests        | `pnpm test`                                                                   |
+| Integration tests | `pnpm test:integration` (needs Docker for Testcontainers)                     |
+| E2E               | `pnpm test:e2e`                                                               |
+| Migrate           | `pnpm db:migrate`                                                             |
+| Seed              | `pnpm db:seed`                                                                |
+| Build             | `pnpm build`                                                                  |
+| Migration lint    | `pnpm db:lint-migrations`                                                     |
+| Format check      | `pnpm format:check`                                                           |
+| CLI               | `pnpm sold <command>` (e.g. `ext:new`, `ext:docs`, `env:up`, `upgrade:check`) |
 
 Definition-of-done gate for any task: typecheck + lint + tests green, migrations verified on an empty DB, permissions + audit events, docs updated, no secrets/TODO-without-issue/dead code/unjustified `any`, **and you have actually run it**.
 

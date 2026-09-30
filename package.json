@@ -1,0 +1,42 @@
+{
+  "name": "sold",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Sold: single-tenant, extensible e-commerce platform (Base + Extensions)",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "turbo run test:e2e",
+    "db:migrate": "pnpm --filter @sold/db migrate",
+    "db:seed": "pnpm --filter @sold/db seed",
+    "db:lint-migrations": "pnpm --filter @sold/db lint-migrations",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "sold": "pnpm --filter @sold/cli exec tsx src/bin.ts"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.3",
+    "@eslint/js": "^10.0.1",
+    "@sold/config": "workspace:*",
+    "@types/node": "^26.6.3",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@sold/core": "workspace:*"
+  }
+}

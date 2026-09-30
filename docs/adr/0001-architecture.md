@@ -10,28 +10,28 @@ Sold is a single-tenant e-commerce platform for high-volume consumer brands. One
 
 ## Decisions
 
-| Concern | Decision | Why |
-|---|---|---|
-| Framework | Next.js (latest stable), App Router, RSC, Server Actions where appropriate, TypeScript `strict` | Server-rendered public pages that cache well; one codebase for storefront, admin, API |
-| Runtime | Node.js LTS | Stability, support window |
-| Monorepo | pnpm workspaces + Turborepo | Fast, strict dependency graph, remote-cacheable |
-| Database | PostgreSQL 16+ only | Transactional integrity for money and inventory; one datastore to operate |
-| ORM / migrations | Drizzle ORM + drizzle-kit, SQL migrations checked in | Typed SQL close to the metal; reviewable migrations; migration linter operates on SQL |
-| Validation | Zod at every boundary | One schema drives types, validation, OpenAPI and settings forms |
-| Jobs | `JobQueue` interface; pg-boss default; Azure Service Bus adapter | No extra infra by default; explicit escape hatch (thresholds in `docs/scaling.md`) because Postgres-as-queue has a ceiling |
-| Edge | Cloudflare (CDN, WAF, rate limit, bot, Turnstile, waiting room, email, R2) | See ADR-0002 |
-| Cache | Next.js cache + tags with a shared Redis-backed cache handler; in-memory only for local dev / ephemeral | ISR consistency across many instances |
-| DB connections | PgBouncer (transaction pooling); `primary` and `replica` handles from day one | Fixed connection budget; catalog/search/admin lists/reporting off the primary |
-| Hosting | Azure Container Apps default (AKS optional), PostgreSQL Flexible Server, Azure Managed Redis, Key Vault | See ADR-0002 |
-| IaC | Terraform (OpenTofu-compatible), `azurerm` + `cloudflare` providers | See ADR-0003 |
-| Object storage | S3-compatible interface; local disk (dev), MinIO (compose), R2 (prod) | Vendor code in adapters only |
-| Customer auth | DB-backed sessions; passkeys, password, magic link | Revocable; no JWT session pitfalls |
-| Admin auth | Local break-glass + OIDC + SAML 2.0 + SCIM 2.0 | Enterprise SSO; Entra ID first-class |
-| Styling | Tailwind + CSS variable tokens; Radix primitives | Themeable, accessible |
-| Testing | Vitest, Playwright, Testcontainers | Real Postgres in integration tests |
-| Observability | OpenTelemetry, pino JSON logs, Prometheus `/metrics` | Standard, vendor-neutral |
-| Local infra | docker-compose: Postgres, PgBouncer, Redis, Mailpit, MinIO, Grafana | `docker compose up` gives a working stack |
-| CI | GitHub Actions | typecheck, lint, unit, integration, e2e, build, migration lint, audit/SBOM |
+| Concern          | Decision                                                                                                | Why                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Framework        | Next.js (latest stable), App Router, RSC, Server Actions where appropriate, TypeScript `strict`         | Server-rendered public pages that cache well; one codebase for storefront, admin, API                                      |
+| Runtime          | Node.js LTS                                                                                             | Stability, support window                                                                                                  |
+| Monorepo         | pnpm workspaces + Turborepo                                                                             | Fast, strict dependency graph, remote-cacheable                                                                            |
+| Database         | PostgreSQL 16+ only                                                                                     | Transactional integrity for money and inventory; one datastore to operate                                                  |
+| ORM / migrations | Drizzle ORM + drizzle-kit, SQL migrations checked in                                                    | Typed SQL close to the metal; reviewable migrations; migration linter operates on SQL                                      |
+| Validation       | Zod at every boundary                                                                                   | One schema drives types, validation, OpenAPI and settings forms                                                            |
+| Jobs             | `JobQueue` interface; pg-boss default; Azure Service Bus adapter                                        | No extra infra by default; explicit escape hatch (thresholds in `docs/scaling.md`) because Postgres-as-queue has a ceiling |
+| Edge             | Cloudflare (CDN, WAF, rate limit, bot, Turnstile, waiting room, email, R2)                              | See ADR-0002                                                                                                               |
+| Cache            | Next.js cache + tags with a shared Redis-backed cache handler; in-memory only for local dev / ephemeral | ISR consistency across many instances                                                                                      |
+| DB connections   | PgBouncer (transaction pooling); `primary` and `replica` handles from day one                           | Fixed connection budget; catalog/search/admin lists/reporting off the primary                                              |
+| Hosting          | Azure Container Apps default (AKS optional), PostgreSQL Flexible Server, Azure Managed Redis, Key Vault | See ADR-0002                                                                                                               |
+| IaC              | Terraform (OpenTofu-compatible), `azurerm` + `cloudflare` providers                                     | See ADR-0003                                                                                                               |
+| Object storage   | S3-compatible interface; local disk (dev), MinIO (compose), R2 (prod)                                   | Vendor code in adapters only                                                                                               |
+| Customer auth    | DB-backed sessions; passkeys, password, magic link                                                      | Revocable; no JWT session pitfalls                                                                                         |
+| Admin auth       | Local break-glass + OIDC + SAML 2.0 + SCIM 2.0                                                          | Enterprise SSO; Entra ID first-class                                                                                       |
+| Styling          | Tailwind + CSS variable tokens; Radix primitives                                                        | Themeable, accessible                                                                                                      |
+| Testing          | Vitest, Playwright, Testcontainers                                                                      | Real Postgres in integration tests                                                                                         |
+| Observability    | OpenTelemetry, pino JSON logs, Prometheus `/metrics`                                                    | Standard, vendor-neutral                                                                                                   |
+| Local infra      | docker-compose: Postgres, PgBouncer, Redis, Mailpit, MinIO, Grafana                                     | `docker compose up` gives a working stack                                                                                  |
+| CI               | GitHub Actions                                                                                          | typecheck, lint, unit, integration, e2e, build, migration lint, audit/SBOM                                                 |
 
 ### Structural rules
 
