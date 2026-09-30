@@ -15,18 +15,24 @@ export class UnsafeExtensionMigrationError extends Error {
 
 /**
  * Apply an extension's migrations under its own journal scope (`ext:<name>`). The migrations are linted
- * first (namespace + online-safety rules); nothing runs if any statement is unsafe, so an extension can
- * neither touch Base tables nor lock a hot one.
+ * first (the extension allowlist + online-safety rules, ADR-0004); nothing runs if any statement is unsafe. This is
+ * the same lint gate CI runs, applied again at apply time so a release cannot skip it (defence in depth).
  */
 export async function migrateExtension(
-  opts: Omit<MigrateOptions, 'scope'> & { extension: string },
+  opts: Omit<MigrateOptions, 'scope'> & {
+    extension: string;
+    /** Every other extension known to the instance: names in their (longer) namespaces are not this extension's. */
+    knownExtensions?: readonly string[];
+  },
 ): Promise<MigrateResult> {
-  const reports = await lintExtensionMigrationDir(opts.dir, opts.extension);
+  const reports = await lintExtensionMigrationDir(opts.dir, opts.extension, {
+    otherExtensions: opts.knownExtensions ?? [],
+  });
   const problems = reports.flatMap((r) =>
     r.findings.map((f) => `${r.file}:${f.line} [${f.rule}] ${f.message}`),
   );
   if (problems.length > 0) throw new UnsafeExtensionMigrationError(opts.extension, problems);
-  const { extension, ...rest } = opts;
+  const { extension, knownExtensions: _known, ...rest } = opts;
   return migrate({ ...rest, scope: `ext:${extension}` });
 }
 

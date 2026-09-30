@@ -36,6 +36,40 @@ export function validateExtensionName(name: string): void {
   }
 }
 
+const MAX_TITLE = 200;
+
+/**
+ * The title ends up in package.json, in a TypeScript string literal and in the README. Reject what cannot be a
+ * plain one-line title (control, line-separator and invisible/bidi formatting characters), then escape per
+ * destination anyway: validation is not the only line of defence.
+ */
+export function validateTitle(title: string): void {
+  if (title.trim().length === 0 || title.length > MAX_TITLE)
+    throw new CliError(`invalid --title: use 1-${MAX_TITLE} characters`, ExitCode.usage);
+  if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(title))
+    throw new CliError(
+      'invalid --title: control, line-break and invisible formatting characters are not allowed',
+      ExitCode.usage,
+    );
+}
+
+/** The inside of a JSON string literal. */
+const jsonEscape = (value: string) => JSON.stringify(value).slice(1, -1);
+/** The inside of a single-quoted JavaScript/TypeScript string literal. */
+const singleQuoteEscape = (value: string) =>
+  value
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'")
+    .replaceAll('\n', '\\n')
+    .replaceAll('\r', '\\r');
+
+const escapeFor = (file: string): ((value: string) => string) =>
+  file.endsWith('.json')
+    ? jsonEscape
+    : /\.(?:[cm]?[jt]sx?)$/.test(file)
+      ? singleQuoteEscape
+      : (v) => v;
+
 const titleCase = (name: string) =>
   name
     .split('-')
@@ -61,6 +95,7 @@ export async function extNew(
   options: ExtNewOptions,
 ): Promise<{ dir: string; files: string[] }> {
   validateExtensionName(options.name);
+  if (options.title !== undefined) validateTitle(options.title);
   const template = join(ctx.cwd, 'extensions', '_template');
   if (!existsSync(template))
     throw new CliError(
@@ -77,8 +112,14 @@ export async function extNew(
     __TITLE__: options.title ?? titleCase(options.name),
     __BASE_RANGE__: baseRangeFor(BASE_VERSION),
   };
-  const render = (s: string) =>
-    Object.entries(tokens).reduce((acc, [k, v]) => acc.replaceAll(k, v), s);
+  // Values are escaped for the kind of file they land in, so a title can never break out of a string literal.
+  const render = (s: string, file = '') => {
+    const escape = escapeFor(file);
+    // One pass, so a value that itself looks like a token is never substituted again.
+    return s.replace(/__(?:NAME|PREFIX|TITLE|BASE_RANGE)__/g, (token) =>
+      escape(tokens[token] ?? token),
+    );
+  };
 
   const files: string[] = [];
   for (const file of await walk(template)) {
@@ -87,7 +128,7 @@ export async function extNew(
     files.push(relative(ctx.cwd, dest));
     if (ctx.dryRun) continue;
     await mkdir(dirname(dest), { recursive: true });
-    await writeFile(dest, render(await readFile(file, 'utf8')));
+    await writeFile(dest, render(await readFile(file, 'utf8'), dest));
   }
   ctx.out.info(
     `${ctx.dryRun ? 'would create' : 'created'} extensions/${options.name}/ (${files.length} files)`,

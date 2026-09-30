@@ -15,6 +15,33 @@ export interface Metrics {
   extensionDuration: Histogram<'extension'>;
   interceptorCalls: Counter<'extension' | 'interceptor' | 'hook' | 'outcome'>;
   interceptorDuration: Histogram<'extension' | 'interceptor'>;
+  safety: ExtensionSafetyMetrics;
+}
+
+export interface ExtensionSafetyMetrics {
+  /** How long an interceptor held the event loop past its budget (detection, not prevention). */
+  blocked: Histogram<'extension' | 'interceptor' | 'source'>;
+  /** Unhandled rejections / uncaught exceptions, by the extension they were attributed to (or `unattributed`). */
+  unhandled: Counter<'extension' | 'kind' | 'fatal'>;
+}
+
+/** Metrics for the hot-path and process-level guards. Shared by the web process and the worker. */
+export function createExtensionSafetyMetrics(registry: Registry): ExtensionSafetyMetrics {
+  return {
+    blocked: new Histogram({
+      name: 'sold_extension_blocked_ms',
+      help: 'Time an extension interceptor blocked the event loop beyond its budget. source: sync-call (exact) or event-loop-lag (suspected). Detection only: a synchronous loop cannot be preempted.',
+      labelNames: ['extension', 'interceptor', 'source'],
+      buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 10000],
+      registers: [registry],
+    }),
+    unhandled: new Counter({
+      name: 'sold_extension_unhandled_failures_total',
+      help: 'Unhandled promise rejections and uncaught exceptions, attributed to an extension where possible. fatal=true means the process exited.',
+      labelNames: ['extension', 'kind', 'fatal'],
+      registers: [registry],
+    }),
+  };
 }
 
 /** RED metrics per route class + pool saturation gauges (Section 8A.10). */
@@ -48,6 +75,7 @@ export function createMetrics(
 
   return {
     registry,
+    safety: createExtensionSafetyMetrics(registry),
     httpRequests: new Counter({
       name: 'sold_http_requests_total',
       help: 'HTTP requests by route class, method and status class.',

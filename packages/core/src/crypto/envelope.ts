@@ -54,25 +54,35 @@ function open(key: Buffer, iv: Buffer, sealed: Buffer, aad: Buffer): Buffer {
   }
 }
 
+/** Parse a comma-separated list of base64 root keys (`SOLD_SECRET_KEY_PREVIOUS`). */
+export function rootKeysFromList(list: string | undefined): RootKey[] {
+  return (list ?? '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0)
+    .map(rootKeyFromBase64);
+}
+
 export class EnvelopeCrypto {
-  private readonly keys = new Map<string, Buffer>();
+  // ES private fields (not TypeScript `private`): key material is unreachable by reflection and never appears in
+  // `JSON.stringify`, `console.log` or `Object.keys` of the instance.
+  readonly #keys = new Map<string, Buffer>();
+  readonly #current: RootKey;
 
   /** `current` encrypts; `previous` keys remain able to decrypt during rotation. */
-  constructor(
-    private readonly current: RootKey,
-    previous: readonly RootKey[] = [],
-  ) {
-    this.keys.set(current.id, current.key);
-    for (const p of previous) this.keys.set(p.id, p.key);
+  constructor(current: RootKey, previous: readonly RootKey[] = []) {
+    this.#current = current;
+    this.#keys.set(current.id, current.key);
+    for (const p of previous) this.#keys.set(p.id, p.key);
   }
 
   encrypt(plaintext: string, context: string): string {
     const dek = randomBytes(32);
     const data = seal(dek, Buffer.from(plaintext, 'utf8'), Buffer.from(context));
-    const wrapped = seal(this.current.key, dek, Buffer.from(`kek:${this.current.id}`));
+    const wrapped = seal(this.#current.key, dek, Buffer.from(`kek:${this.#current.id}`));
     return [
       'sold1',
-      this.current.id,
+      this.#current.id,
       b64(wrapped.iv),
       b64(wrapped.sealed),
       b64(data.iv),
@@ -92,7 +102,7 @@ export class EnvelopeCrypto {
       string,
       string,
     ];
-    const kek = this.keys.get(keyId);
+    const kek = this.#keys.get(keyId);
     if (!kek) throw new DecryptionError(`No root key available for key id ${keyId}`);
     const dek = open(kek, unb64(wrapIv), unb64(wrapped), Buffer.from(`kek:${keyId}`));
     return open(dek, unb64(dataIv), unb64(data), Buffer.from(context)).toString('utf8');
@@ -100,6 +110,17 @@ export class EnvelopeCrypto {
 
   /** True when the token was wrapped by a key other than the current one (re-encrypt on next write). */
   needsRotation(token: string): boolean {
-    return token.split('.')[1] !== this.current.id;
+    return token.split('.')[1] !== this.#current.id;
+  }
+
+  /** True when this instance holds the root key that wrapped `token` (current or previous). */
+  canDecrypt(token: string): boolean {
+    const id = token.split('.')[1];
+    return id !== undefined && this.#keys.has(id);
+  }
+
+  /** Re-encrypt a token under the current key (same context). Used by `rotate`. */
+  rewrap(token: string, context: string): string {
+    return this.encrypt(this.decrypt(token, context), context);
   }
 }

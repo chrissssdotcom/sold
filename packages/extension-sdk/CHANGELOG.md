@@ -10,3 +10,6 @@ permissions, routes, pages, admin screens, blocks, slots, services, jobs and sch
 re-exports of `zod` and Drizzle's Postgres helpers so extensions share Base's single instances.
 Events: `cart.updated`, `order.placed`, `payment.captured`, `order.status_changed`. Hooks: `cart.item.adding`, `checkout.placing`.
 Services: `pricing.rounding`.
+
+Unreleased (0.1.x): routes may declare `redirects`, `html` and `cache` (the explicit opt-outs from Base's response
+filtering); the job queue name `events` is reserved (it is the observer delivery queue).

@@ -106,12 +106,3 @@ export class QueryCounter implements DrizzleLogger {
     this.queries.length = 0;
   }
 }
-
-/**
- * Schema-less drizzle handles for extensions: they bring their own tables (`ext_<name>_*`) and must not see
- * Base's schema object. They share the app's pools, so extension queries count against the same
- * connection budget, timeouts and pool-saturation metrics.
- */
-export function createExtensionDb(db: Db): { primary: NodePgDatabase; replica: NodePgDatabase } {
-  return { primary: drizzle(db.pools.primary), replica: drizzle(db.pools.replica) };
-}

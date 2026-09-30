@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { environmentNames } from '../config/schema';
+import { environmentNames, type EnvironmentName } from '../config/schema';
 
 const url = z.string().url();
 const optionalUrl = z
@@ -15,7 +15,12 @@ const optionalUrl = z
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    SOLD_ENVIRONMENT: z.enum(environmentNames).default('local'),
+    /**
+     * Which environment this is. Defaults to `local` ONLY outside production builds: with NODE_ENV=production it must
+     * be stated (see `superRefine`), otherwise a production host missing the variable would silently use local
+     * defaults, including the public development encryption key.
+     */
+    SOLD_ENVIRONMENT: z.enum(environmentNames).optional(),
     SOLD_ROLE: z.enum(['web', 'worker']).default('web'),
     SOLD_SCALE_MODE: z.enum(['normal', 'prescale']).default('normal'),
     /** `<base-version>+<customer>.<instance-build>` (Section 8C.6). */
@@ -50,12 +55,50 @@ export const envSchema = z
 
     /** Base64 32-byte key encrypting stored credentials (envelope encryption root in dev). */
     SOLD_SECRET_KEY: z.string().optional(),
+    /**
+     * Comma-separated base64 32-byte keys that were `SOLD_SECRET_KEY` before a rotation. They can only DECRYPT; new
+     * writes and `ext:settings:rotate` use the current key. Remove them once `rotate` reports nothing left.
+     */
+    SOLD_SECRET_KEY_PREVIOUS: z.string().optional(),
+
+    /**
+     * Extension database isolation (ADR-0004). `enforce`: each extension's `ctx.db` connects as its own least-privilege
+     * database role. `off`: extensions share the application's privileges; local development and tests only.
+     * Default: `enforce` in production builds and in every environment except `local`, else `off`.
+     */
+    SOLD_EXTENSION_DB_ISOLATION: z.enum(['enforce', 'off']).optional(),
+    /**
+     * Host/port/database used for extension connections (credentials in it are ignored). Point it at the pooler in
+     * deployed environments; defaults to `DATABASE_URL`.
+     */
+    DATABASE_EXTENSION_URL: optionalUrl,
+    /**
+     * Secret the per-extension database role passwords are derived from. Required (by `createKernel`) when isolation is
+     * `enforce` and at least one extension is enabled: an instance without extensions needs none.
+     */
+    SOLD_EXTENSION_DB_SECRET: z.string().min(32).optional(),
+    /** Maximum connections per extension (and per handle). The total budget is extensions x this; idle pools hold none. */
+    SOLD_EXTENSION_DB_POOL_MAX: z.coerce.number().int().min(1).max(20).default(3),
+    /** Prefix of the extension roles (`<prefix><name>`). Roles are cluster-wide: deployments sharing a cluster differ here. */
+    SOLD_EXTENSION_DB_ROLE_PREFIX: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]{0,24}$/, 'lower-case letters, digits and underscores')
+      .default('sold_ext_'),
     /** Bearer token protecting `/metrics`. */
     METRICS_TOKEN: z.string().min(16).optional(),
     OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   })
   .superRefine((env, ctx) => {
-    const shared = env.SOLD_ENVIRONMENT === 'stage' || env.SOLD_ENVIRONMENT === 'prod';
+    if (env.NODE_ENV === 'production' && env.SOLD_ENVIRONMENT === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SOLD_ENVIRONMENT'],
+        message:
+          'SOLD_ENVIRONMENT must be set explicitly when NODE_ENV=production (local | ephemeral | dev | stage | prod): defaulting to local would use the public development encryption key',
+      });
+    }
+    const environment = env.SOLD_ENVIRONMENT ?? 'local';
+    const shared = environment === 'stage' || environment === 'prod';
     if (shared && !env.REDIS_URL) {
       ctx.addIssue({
         code: 'custom',
@@ -63,7 +106,7 @@ export const envSchema = z
         message: 'REDIS_URL is required in stage and prod (shared cache, rate limits, counters)',
       });
     }
-    if (env.SOLD_ENVIRONMENT !== 'local' && env.NODE_ENV === 'production') {
+    if (environment !== 'local' && env.NODE_ENV === 'production') {
       if (!env.SOLD_SECRET_KEY) {
         ctx.addIssue({
           code: 'custom',
@@ -79,11 +122,7 @@ export const envSchema = z
         });
       }
     }
-    if (
-      env.NODE_ENV === 'production' &&
-      env.SOLD_ENVIRONMENT !== 'local' &&
-      env.SOLD_BUILD_ID === 'dev'
-    ) {
+    if (env.NODE_ENV === 'production' && environment !== 'local' && env.SOLD_BUILD_ID === 'dev') {
       ctx.addIssue({
         code: 'custom',
         path: ['SOLD_BUILD_ID'],
@@ -98,9 +137,57 @@ export const envSchema = z
         message: 'SOLD_SECRET_KEY must be 32 bytes, base64 encoded',
       });
     }
+    for (const previous of splitKeys(env.SOLD_SECRET_KEY_PREVIOUS)) {
+      if (Buffer.from(previous, 'base64').length !== 32) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['SOLD_SECRET_KEY_PREVIOUS'],
+          message: 'every SOLD_SECRET_KEY_PREVIOUS entry must be 32 bytes, base64 encoded',
+        });
+        break;
+      }
+    }
+    if (env.SOLD_SECRET_KEY_PREVIOUS && !env.SOLD_SECRET_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SOLD_SECRET_KEY_PREVIOUS'],
+        message: 'SOLD_SECRET_KEY_PREVIOUS needs a current SOLD_SECRET_KEY',
+      });
+    }
+    const strict = env.NODE_ENV === 'production' || environment !== 'local';
+    if (env.SOLD_EXTENSION_DB_ISOLATION === 'off' && strict) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SOLD_EXTENSION_DB_ISOLATION'],
+        message:
+          'SOLD_EXTENSION_DB_ISOLATION=off is for local development and tests only: it is refused in production builds and in every environment except local',
+      });
+    }
   });
 
-export type Env = z.output<typeof envSchema>;
+type RawEnv = z.output<typeof envSchema>;
+/** The validated environment; `SOLD_ENVIRONMENT` is always resolved (an explicit value, or `local` outside production). */
+export type Env = Omit<RawEnv, 'SOLD_ENVIRONMENT'> & { SOLD_ENVIRONMENT: EnvironmentName };
+
+/** The effective isolation mode: explicit setting, else `enforce` in production builds and outside local. */
+export function extensionDbIsolation(
+  env: Pick<
+    z.input<typeof envSchema>,
+    'NODE_ENV' | 'SOLD_ENVIRONMENT' | 'SOLD_EXTENSION_DB_ISOLATION'
+  >,
+): 'enforce' | 'off' {
+  if (env.SOLD_EXTENSION_DB_ISOLATION) return env.SOLD_EXTENSION_DB_ISOLATION;
+  const environment: EnvironmentName = env.SOLD_ENVIRONMENT ?? 'local';
+  return env.NODE_ENV === 'production' || environment !== 'local' ? 'enforce' : 'off';
+}
+
+/** Comma-separated key list to its entries (whitespace and empty entries dropped). */
+export function splitKeys(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+}
 
 export class EnvValidationError extends Error {
   constructor(public readonly issues: string[]) {
@@ -117,5 +204,5 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
     );
   }
-  return parsed.data;
+  return { ...parsed.data, SOLD_ENVIRONMENT: parsed.data.SOLD_ENVIRONMENT ?? 'local' };
 }

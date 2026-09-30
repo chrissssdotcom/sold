@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { EventMap, EventName, ExtensionContext } from '@sold/extension-sdk';
 import { withTimeout } from '../resilience/circuit-breaker';
 import { fromJsonSafe, toJsonSafe, type JsonSafe } from '../serialization';
+import { runAsExtension } from './process-guard';
 import type { LoadedExtension } from './load-order';
 
 /** What travels through the job queue for one observer of one event. */
@@ -134,11 +135,15 @@ export class EventBus {
         eventId: job.eventId,
         attempt,
       };
+      // Attributed to the extension: a rejection or timer the handler leaves behind is traced back to it and
+      // contained by the process guard instead of ending the worker (`installProcessGuard`).
       await withTimeout(
-        Promise.resolve(
-          (handler.handler as (p: unknown, c: unknown) => Promise<void>)(
-            fromJsonSafe(job.payload),
-            ctx,
+        runAsExtension({ extension: job.extension, kind: 'observer', name: job.observer }, () =>
+          Promise.resolve(
+            (handler.handler as (p: unknown, c: unknown) => Promise<void>)(
+              fromJsonSafe(job.payload),
+              ctx,
+            ),
           ),
         ),
         this.timeoutMs,

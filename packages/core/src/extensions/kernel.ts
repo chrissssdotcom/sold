@@ -1,5 +1,14 @@
 import { join } from 'node:path';
-import { createExtensionDb, type Db } from '@sold/db';
+import {
+  ExtensionIsolationError,
+  provisionExtensionRole,
+  prefixCollisions,
+  purgeExtension,
+  sharedExtensionDbProvider,
+  type Db,
+  type ExtensionDbProvider,
+  type ExtensionRoleConfig,
+} from '@sold/db';
 import type {
   ExtensionContext,
   ExtensionLogger,
@@ -24,7 +33,13 @@ import { denyAll, PermissionRegistry, type Authorizer } from './permissions';
 import { PgExtensionRegistry, PgSettingsStore } from './pg-stores';
 import { RouteTable } from './route-table';
 import { ServiceRegistry, type ProviderOrigin } from './service-registry';
-import { SettingsService, noopAudit, type AuditSink } from './settings';
+import {
+  SettingsService,
+  noopAudit,
+  type AuditSink,
+  type RotationReport,
+  type SettingsHealth,
+} from './settings';
 
 export interface KernelLogger extends ExtensionLogger {
   child(bindings: Record<string, unknown>): KernelLogger;
@@ -57,7 +72,20 @@ export interface KernelDeps {
     url: string;
     dir: string;
     extension: string;
+    /** Every extension this instance knows: names in another one's longer namespace are not this extension's. */
+    knownExtensions?: readonly string[];
   }): Promise<{ applied: string[] }>;
+  /**
+   * Where `ctx.db` comes from. `createKernel` builds an enforcing provider (one least-privilege database role and
+   * pool per extension) from the environment; without one the kernel falls back to the SHARED application pools,
+   * which gives extensions the application's privileges and is logged as a warning (ADR-0004).
+   */
+  extensionDb?: ExtensionDbProvider;
+  /**
+   * Role provisioning parameters. Present when isolation is enforced; used by the release pipeline (`migrate`,
+   * `reconcile`, `uninstall`), which runs as a principal that may create roles.
+   */
+  isolation?: ExtensionRoleConfig;
   queue: JobQueue;
   crypto: EnvelopeCrypto;
   audit?: AuditSink;
@@ -93,7 +121,7 @@ export class Kernel {
   readonly interceptors: InterceptorRunner;
   readonly authorizer: Authorizer;
   private readonly registry: PgExtensionRegistry;
-  private readonly extensionDb: ReturnType<typeof createExtensionDb>;
+  private readonly extensionDb: ExtensionDbProvider;
   private readonly manifests = new Map<string, LoadedExtension>();
 
   private constructor(
@@ -104,12 +132,22 @@ export class Kernel {
     this.authorizer = deps.authorizer ?? denyAll;
     for (const e of extensions) this.manifests.set(e.manifest.name, e);
     this.registry = new PgExtensionRegistry(deps.db.primary);
-    this.extensionDb = createExtensionDb(deps.db);
+    this.extensionDb = deps.extensionDb ?? sharedExtensionDbProvider(deps.db);
     this.settings = new SettingsService({
       store: new PgSettingsStore(deps.db.primary),
       crypto: deps.crypto,
       audit: deps.audit ?? noopAudit,
+      onError: (extension, error) =>
+        deps.log.warn(
+          { extension, err: error.name },
+          'extension settings could not be read: the extension runs degraded',
+        ),
     });
+    if (this.extensionDb.mode === 'off' && extensions.length > 0)
+      deps.log.warn(
+        { extensions: extensions.map((e) => e.manifest.name) },
+        'extension database isolation is OFF: extensions share the application database privileges (local development only)',
+      );
 
     for (const b of deps.baseProviders ?? []) this.services.register(b.provider, 'base', 'base');
     for (const { manifest, origin } of extensions) {
@@ -157,17 +195,29 @@ export class Kernel {
 
     // Cross-checks that need the whole set.
     const issues: string[] = [];
-    const known = new PermissionRegistry();
-    for (const e of extensions) known.register(e.manifest);
+    // Table prefixes must be delimiter-safe across EVERY known extension (enabled or not): with `foo` and `foo-bar`
+    // the tables `ext_foo_bar_*` would belong to both, and purge/lint could not tell them apart.
+    const known = deps.candidates.map((c) => c.manifest.name);
+    for (const name of known)
+      if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(name))
+        issues.push(
+          `extension "${name}": names may not end with a hyphen or contain "--" (the table prefix must be unambiguous)`,
+        );
+    for (const [a, b] of prefixCollisions(known))
+      issues.push(
+        `extensions "${a}" and "${b}" have overlapping table prefixes (ext_${a.replaceAll('-', '_')}_ is a prefix of ext_${b.replaceAll('-', '_')}_): rename one`,
+      );
+    const perms = new PermissionRegistry();
+    for (const e of extensions) perms.register(e.manifest);
     for (const { manifest } of extensions) {
       for (const r of manifest.routes) {
-        if (r.permission && !known.has(r.permission))
+        if (r.permission && !perms.has(r.permission))
           issues.push(
             `extension "${manifest.name}": route ${r.method} ${r.path} uses unknown permission "${r.permission}"`,
           );
       }
       for (const s of manifest.adminScreens) {
-        if (!known.has(s.permission))
+        if (!perms.has(s.permission))
           issues.push(
             `extension "${manifest.name}": admin screen ${s.path} uses unknown permission "${s.permission}"`,
           );
@@ -195,8 +245,8 @@ export class Kernel {
       extension,
       log: this.logFor(extension),
       signal,
-      // `ExtensionDb` is a structural alias of these drizzle handles.
-      db: this.extensionDb,
+      // In `enforce` mode these handles connect as the extension's own database role (ADR-0004).
+      db: this.extensionDb.for(extension),
       settings: { get: () => this.settings.get(extension) },
       queue: {
         enqueue: async (queue, data, options) => {
@@ -230,25 +280,58 @@ export class Kernel {
 
   // ---- release-pipeline steps (explicit, not run at web boot) -----------------------------------
 
-  /** Apply each enabled extension's forward-only migrations under its own journal scope. */
+  /** Every extension this instance knows: configured candidates plus anything the registry still records. */
+  private async knownExtensionNames(): Promise<string[]> {
+    const names = new Set(this.deps.candidates.map((c) => c.manifest.name));
+    for (const row of await this.registry.list()) names.add(row.name);
+    return [...names];
+  }
+
+  /**
+   * Create the extension's database role and align its privileges with the tables that exist now (release pipeline
+   * only). A no-op when isolation is not enforced.
+   */
+  private async provision(extension: string): Promise<void> {
+    if (!this.deps.isolation) return;
+    const result = await provisionExtensionRole(this.deps.db.pools.primary, {
+      extension,
+      otherExtensions: await this.knownExtensionNames(),
+      config: this.deps.isolation,
+    });
+    if (result.ignored.length > 0)
+      this.deps.log.warn(
+        { extension, ignored: result.ignored },
+        'objects with the extension prefix are not valid owned names and were NOT granted to its role',
+      );
+  }
+
+  /**
+   * Apply each enabled extension's forward-only migrations under its own journal scope (linted first: the same
+   * allowlist gate CI runs), then create/refresh its database role and per-table grants.
+   */
   async migrate(): Promise<{ extension: string; applied: string[] }[]> {
     const out: { extension: string; applied: string[] }[] = [];
+    const known = await this.knownExtensionNames();
     for (const { manifest } of this.extensions) {
-      if (!manifest.migrations) continue;
-      const root = this.deps.extensionRoot(manifest.name);
-      if (!root)
-        throw new Error(`Cannot locate the package directory of extension "${manifest.name}"`);
-      if (!this.deps.migrateExtension) {
-        throw new Error(
-          'This process cannot run migrations: use `pnpm sold ext:migrate` (the release pipeline step)',
-        );
+      if (manifest.migrations) {
+        const root = this.deps.extensionRoot(manifest.name);
+        if (!root)
+          throw new Error(`Cannot locate the package directory of extension "${manifest.name}"`);
+        if (!this.deps.migrateExtension) {
+          throw new Error(
+            'This process cannot run migrations: use `pnpm sold ext:migrate` (the release pipeline step)',
+          );
+        }
+        const result = await this.deps.migrateExtension({
+          url: this.deps.migrationUrl,
+          dir: join(root, manifest.migrations.dir),
+          extension: manifest.name,
+          knownExtensions: known,
+        });
+        out.push({ extension: manifest.name, applied: result.applied });
       }
-      const result = await this.deps.migrateExtension({
-        url: this.deps.migrationUrl,
-        dir: join(root, manifest.migrations.dir),
-        extension: manifest.name,
-      });
-      out.push({ extension: manifest.name, applied: result.applied });
+      // Grants are per table and must follow the tables: re-issued on every run, also when nothing was applied.
+      await this.provision(manifest.name);
     }
     return out;
   }
@@ -276,6 +359,31 @@ export class Kernel {
         `Extension migrations are not applied for: ${problems.join('; ')}. Run the migration step (pnpm db:migrate) before starting.`,
       );
     }
+    await this.verifyIsolation();
+  }
+
+  /**
+   * Boot-time check that every enabled extension's database handle really is the least-privilege role: it connects
+   * (the release step provisioned it), it is not privileged, and it cannot touch the tables that hold platform state
+   * and secrets. Fails closed: a misconfigured or stale role must not serve traffic.
+   */
+  async verifyIsolation(): Promise<void> {
+    if (this.extensionDb.mode !== 'enforce') return;
+    const problems: string[] = [];
+    for (const { manifest } of this.extensions) {
+      try {
+        const { problems: found } = await this.extensionDb.verify(manifest.name);
+        for (const p of found) problems.push(`${manifest.name}: ${p}`);
+      } catch (error) {
+        problems.push(
+          `${manifest.name}: cannot connect as role ${this.extensionDb.roleFor(manifest.name)} (${(error as Error).message}). Run \`sold ext:migrate\` to provision it.`,
+        );
+      }
+    }
+    if (problems.length > 0)
+      throw new ExtensionIsolationError(
+        `Extension database isolation check failed: ${problems.join('; ')}`,
+      );
   }
 
   private async expectedMigrations(name: string, dir: string): Promise<readonly string[]> {
@@ -303,14 +411,20 @@ export class Kernel {
       for (const { manifest } of this.extensions) {
         const row = existing.get(manifest.name);
         const ctx = this.contextFor(manifest.name, ac.signal);
-        if (!row) {
-          // The registry row must exist before onInstall so hooks can use settings (FK to the registry).
-          await this.registry.upsert(manifest.name, manifest.version, 'disabled');
+        // The role must exist (with grants for the tables that exist now) before any hook uses `ctx.db`.
+        await this.provision(manifest.name);
+        if (!row || row.state === 'installing') {
+          // The registry row must exist before onInstall so hooks can use settings (FK to the registry). It is
+          // recorded as `installing` and only becomes `enabled` after onInstall AND onEnable succeed, so a crash
+          // in between (SIGKILL, OOM) leaves `installing` behind and the next run installs again. Hooks must
+          // therefore be idempotent (docs/extending.md).
+          if (!row) await this.registry.beginInstall(manifest.name, manifest.version);
           try {
             await manifest.lifecycle.onInstall?.(ctx as never);
             await manifest.lifecycle.onEnable?.(ctx as never);
           } catch (error) {
-            await this.registry.remove(manifest.name);
+            // A hook that FAILED (as opposed to a crash) rolls the attempt back, so the step can be retried cleanly.
+            if (!row) await this.registry.remove(manifest.name);
             throw new Error(
               `Extension "${manifest.name}" failed to install: ${(error as Error).message}`,
               { cause: error },
@@ -369,11 +483,20 @@ export class Kernel {
   }
 
   /**
-   * Explicit removal (`sold ext:uninstall <name> --purge`). Runs `onUninstall`, then deletes the registry row
-   * (cascading its settings) and drops every table carrying the extension's prefix. Never automatic:
-   * disabling an extension keeps its data.
+   * Explicit removal (`sold ext:uninstall <name> --purge`). Runs `onUninstall`, then in ONE transaction drops every
+   * object the extension owns (tables, views, sequences, functions, types), deletes its migration journal rows,
+   * its registry row (cascading its settings) and its database role, so a later reinstall starts clean. Object names
+   * come from the catalogue and are always quoted, never interpolated. Never automatic: disabling an extension
+   * keeps its data. Refuses when another known extension's table prefix overlaps this one.
    */
-  async uninstall(name: string, opts: { purge: boolean }): Promise<{ droppedTables: string[] }> {
+  async uninstall(
+    name: string,
+    opts: { purge: boolean },
+  ): Promise<{
+    droppedTables: string[];
+    dropped: Awaited<ReturnType<typeof purgeExtension>>['dropped'];
+    roleDropped: boolean;
+  }> {
     const candidate = this.deps.candidates.find((c) => c.manifest.name === name);
     if (!candidate) throw new Error(`Extension "${name}" is not installed`);
     if (this.manifests.has(name))
@@ -382,25 +505,36 @@ export class Kernel {
       throw new Error(
         'Refusing to uninstall without --purge: this permanently deletes the extension data',
       );
-    const prefix = candidate.manifest.tablePrefix;
+    const known = await this.knownExtensionNames();
+    // Fail before running any hook if the objects cannot be attributed unambiguously.
+    const overlapping = prefixCollisions(known).filter(([a, b]) => a === name || b === name);
+    if (overlapping.length > 0)
+      throw new ExtensionIsolationError(
+        `Refusing to purge "${name}": its table prefix overlaps with ${overlapping.map(([a, b]) => (a === name ? b : a)).join(', ')}, so its objects cannot be told apart from theirs.`,
+      );
     await candidate.manifest.lifecycle.onUninstall?.(
       this.contextFor(name, new AbortController().signal) as never,
     );
-    const { rows } = await this.deps.db.pools.primary.query<{ tablename: string }>(
-      `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE $1`,
-      [`${prefix.replaceAll('_', '\\_')}%`],
-    );
-    const dropped: string[] = [];
-    for (const { tablename } of rows) {
-      if (!tablename.startsWith(prefix)) continue;
-      await this.deps.db.pools.primary.query(`DROP TABLE IF EXISTS "${tablename}" CASCADE`);
-      dropped.push(tablename);
+    const client = await this.deps.db.pools.primary.connect();
+    try {
+      const result = await purgeExtension(client, {
+        extension: name,
+        knownExtensions: known,
+        config: this.deps.isolation,
+      });
+      if (!result.roleDropped)
+        this.deps.log.warn(
+          { extension: name, err: result.roleDropError },
+          'the extension database role could not be dropped (privileges in another database of this cluster?): drop it by hand',
+        );
+      return {
+        droppedTables: result.dropped.tables,
+        dropped: result.dropped,
+        roleDropped: result.roleDropped,
+      };
+    } finally {
+      client.release();
     }
-    await this.registry.remove(name);
-    await this.deps.db.pools.primary.query(`DELETE FROM _sold_migrations WHERE scope = $1`, [
-      `ext:${name}`,
-    ]);
-    return { droppedTables: dropped };
   }
 
   // ---- queues (worker) -----------------------------------------------------------------------
@@ -463,9 +597,37 @@ export class Kernel {
     }
   }
 
-  /** Warm the in-memory settings snapshots that hot-path interceptors read. */
-  async warm(): Promise<void> {
-    await this.settings.warm();
+  /**
+   * Warm the in-memory settings snapshots that hot-path interceptors read, and keep them fresh in the background
+   * (jittered, unref'd timer; see `SettingsService`). An extension whose settings cannot be read is reported in
+   * `health()` instead of failing the boot.
+   */
+  async warm(): Promise<SettingsHealth> {
+    const health = await this.settings.warm();
+    this.settings.startRefresh();
+    return health;
+  }
+
+  /** Readiness detail: extensions that run degraded, and how `ctx.db` is scoped. */
+  health(): {
+    settings: SettingsHealth;
+    extensionDb: { mode: 'enforce' | 'off'; pools: ReturnType<ExtensionDbProvider['stats']> };
+  } {
+    return {
+      settings: this.settings.health(),
+      extensionDb: { mode: this.extensionDb.mode, pools: this.extensionDb.stats() },
+    };
+  }
+
+  /** Re-encrypt every stored secret under the current root key (`sold ext:settings:rotate`). */
+  async rotateSettings(actor = 'system:rotate'): Promise<RotationReport> {
+    return this.settings.rotate(actor);
+  }
+
+  /** Stop background timers and release the extension database pools. */
+  async close(): Promise<void> {
+    this.settings.stopRefresh();
+    await this.extensionDb.close();
   }
 
   /** Machine-readable summary for `/api/version`-style diagnostics and generated docs. */
@@ -475,8 +637,10 @@ export class Kernel {
     services: ReturnType<ServiceRegistry['list']>;
     permissions: number;
     routes: number;
+    extensionDbIsolation: 'enforce' | 'off';
   } {
     return {
+      extensionDbIsolation: this.extensionDb.mode,
       order: this.extensions.map((e) => `${e.manifest.name}@${e.manifest.version}`),
       disabled: this.disabledNames,
       services: this.services.list(),

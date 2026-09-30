@@ -36,8 +36,8 @@ pnpm sold ext:new loyalty-points --title "Award loyalty points on orders"
 pnpm install
 ```
 
-`ext:new` copies `extensions/_template` (a manifest, a migration, a unit test and a README), filling in the name, the
-table prefix and the Base version range. Add `'loyalty-points'` to `extensions` in `sold.config.ts`, then:
+`ext:new` copies `extensions/_template` (a manifest, its settings, an observer, a route, a migration, a unit test and a
+README), filling in the name, the table prefix and the Base version range. Add `'loyalty-points'` to `extensions` in `sold.config.ts`, then:
 
 ```bash
 pnpm db:migrate     # base migrations, then extension migrations and lifecycle hooks
@@ -70,10 +70,10 @@ existing tables, expand/contract). See `docs/runbooks/database.md`.
 A Zod schema is the whole settings UI. Every field needs a default (or to be optional) so a fresh install parses. Fields
 listed in `secrets` are envelope-encrypted at rest, never shown again, and never written to logs or audit entries.
 
-<!-- from: extensions/loyalty-points/src/index.ts -->
+<!-- from: extensions/loyalty-points/src/settings.ts -->
 
 ```ts
-const settings = z.object({
+export const settings = z.object({
   pointsPerDollar: z.number().int().min(1).max(100).default(1).meta({ title: 'Points per dollar' }),
   maxQuantityPerLine: z.number().int().min(1).max(1000).default(10).meta({
     title: 'Max quantity per cart line',
@@ -93,24 +93,23 @@ const settings = z.object({
 queue. It can never delay or fail checkout. Because delivery is at-least-once, **make it idempotent**: here the award is
 keyed by order id, so a redelivered event changes nothing.
 
-<!-- from: extensions/loyalty-points/src/index.ts -->
+<!-- from: extensions/loyalty-points/src/award-points.observer.ts -->
 
 ```ts
-  observers: [
-    {
-      event: 'order.placed',
-      name: 'award-points',
-      async handler(order, ctx) {
-        if (!order.customerId) return; // guests earn nothing
-        const cfg = await ctx.settings.get();
-        const points = pointsFor(order.total, cfg.pointsPerDollar);
-        if (points === 0n) return;
-        await ctx.db.primary.transaction(async (tx) => {
-          const inserted = await tx.execute(sql`
-            INSERT INTO ext_loyalty_points_awards (order_id, customer_id, points)
-            VALUES (${order.orderId}, ${order.customerId}, ${points.toString()}::bigint)
-            ON CONFLICT (order_id) DO NOTHING RETURNING order_id`);
-          if (inserted.rowCount === 0) return; // already awarded: a retry or redelivery
+export const awardPoints: ObserverDefinition<'order.placed', ExtensionContext<Settings>> = {
+  event: 'order.placed',
+  name: 'award-points',
+  async handler(order, ctx) {
+    if (!order.customerId) return; // guests earn nothing
+    const cfg = await ctx.settings.get();
+    const points = pointsFor(order.total, cfg.pointsPerDollar);
+    if (points === 0n) return;
+    await ctx.db.primary.transaction(async (tx) => {
+      const inserted = await tx.execute(sql`
+        INSERT INTO ext_loyalty_points_awards (order_id, customer_id, points)
+        VALUES (${order.orderId}, ${order.customerId}, ${points.toString()}::bigint)
+        ON CONFLICT (order_id) DO NOTHING RETURNING order_id`);
+      if (inserted.rowCount === 0) return; // already awarded: a retry or redelivery
 ```
 
 Money is always `{ amount: bigint, currency }` in minor units, never a float; the example computes points from whole major
@@ -119,14 +118,18 @@ units using the currency's real exponent (JPY 0, AUD 2, KWD 3).
 ### 5. Take part in decisions: interceptors
 
 An interceptor sits **inside** cart or checkout and may modify or veto. That makes it the most constrained thing you can
-write, because a slow one slows every shopper:
+write, because a slow one slows every shopper. The contract:
 
 - It gets **no I/O**: no database, no queue, no network. Settings come from a memory snapshot.
-- It has a hard time budget (declared in `performance.budgetMs`, 1-50 ms). A late result is discarded even if it arrives.
+- It has a time budget (declared in `performance.budgetMs`, 1-50 ms) that starts when your handler starts, not while it
+  waits for a slot. A late result is discarded even if it arrives.
 - You declare what happens when it fails: `failPolicy: 'open'` lets the request continue, `'closed'` vetoes it. Choose
   deliberately: `'closed'` makes your extension a hard dependency of checkout.
-- Repeated failures open a circuit breaker and the interceptor is bypassed (per its `failPolicy`) until it recovers.
-- Anything it returns as `modify` is validated against a strict schema before it is applied.
+- Repeated failures (errors, timeouts, invalid `modify` results, a result that throws when read) open a circuit breaker and
+  the interceptor is bypassed (per its `failPolicy`) until it recovers. Our own pool being full never counts against you.
+- Each extension has its own bounded concurrency pool, so a slow neighbour cannot starve you (and you cannot starve it).
+- Anything it returns as `modify` is validated against a strict schema before it is applied. A `veto` message is shown to
+  shoppers, so control and bidirectional characters and `<` `>` are stripped and it is cut to 200 characters.
 
 <!-- from: extensions/loyalty-points/src/index.ts -->
 
@@ -134,22 +137,38 @@ write, because a slow one slows every shopper:
   performance: { hotPath: true, budgetMs: 10 },
 ```
 
-<!-- from: extensions/loyalty-points/src/index.ts -->
+<!-- from: extensions/loyalty-points/src/max-quantity.interceptor.ts -->
 
 ```ts
-  interceptors: [
-    {
-      hook: 'cart.item.adding',
-      name: 'max-quantity',
-      failPolicy: 'open', // if we are slow or broken, let the shopper add to cart
-      async handler(item, ctx) {
-        const { maxQuantityPerLine } = await ctx.settings.get(); // memory snapshot: no database on the hot path
-        if (item.quantity > maxQuantityPerLine) {
+  hook: 'cart.item.adding',
+  name: 'max-quantity',
+  failPolicy: 'open', // if we are slow or broken, let the shopper add to cart
+  async handler(item, ctx) {
+    const { maxQuantityPerLine } = await ctx.settings.get(); // memory snapshot: no database on the hot path
+    if (item.quantity > maxQuantityPerLine) {
 ```
 
 `performance.hotPath` must be declared honestly: an extension with a cart/checkout interceptor that says `hotPath: false`
 is rejected at load time. Per-extension latency and outcome metrics are emitted for you
 (`sold_extension_interceptor_calls_total`, `sold_extension_interceptor_duration_ms`).
+
+#### What the hot-path contract is, and is not
+
+Extensions are **trusted, in-process code** (see [ADR-0004](adr/0004-extension-trust-model.md)); the hot-path contract is a
+best-effort **guardrail against accidents**, not a sandbox. Base does what a single Node process can do:
+
+| Mechanism                                                       | Effect                                                                                                                                                                                          |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No I/O clients on the interceptor context                       | The intended path: there is nothing to call                                                                                                                                                     |
+| Lint (`*.interceptor.ts` and every non-observer/job/route file) | Network, `fs`, process and `pg`/`ioredis`/`undici` imports and the globals `fetch`, `XMLHttpRequest`, `WebSocket` are errors (see "Boundaries")                                                 |
+| Runtime guard, **prevents**                                     | A new connection, `fetch()`, UDP, DNS lookups, spawning processes or workers and `Atomics.wait` throw `HotPathViolation` while an interceptor runs                                              |
+| Runtime guard, **detects**                                      | A write on an already-open socket (a pooled keep-alive connection, a warm `pg`/`undici` pool) and pollution of `Object.prototype`/`Array.prototype` fail the call and count against the breaker |
+| Time budget                                                     | Cuts off async work that overruns. **It cannot preempt a synchronous loop**: JavaScript has no way to                                                                                           |
+| Blocked-loop detection                                          | A handler that holds the event loop longer than its budget is recorded in `sold_extension_blocked_ms`; past 5x its budget its breaker opens at once. Detection after the fact, not prevention   |
+| Process guard                                                   | A floating promise or throwing timer started by extension code is attributed to it, logged and counted (`sold_extension_unhandled_failures_total`); the worker no longer exits for it           |
+
+What it will **not** stop: a `fetch` captured before the guard was installed, `fs` access, CPU loops, another thread, native
+addons. If you need isolation from code you do not trust, extensions are the wrong mechanism; see the ADR.
 
 ### 6. Override a Base behaviour: service providers
 
@@ -171,22 +190,33 @@ An explicit selection always wins.
 
 Routes are mounted under a reserved prefix, so they can never shadow a Base route. Every route is **either** `public: true`
 **or** carries a `permission` (checked through the single `authorize()` primitive before your handler runs); declaring both
-or neither is rejected. Webhooks must be public and verify their own signature. Responses default to
-`Cache-Control: no-store`, so a personalised response cannot be cached by the CDN unless you deliberately say so.
+or neither is rejected. Webhooks must be public and verify their own signature.
 
-<!-- from: extensions/loyalty-points/src/index.ts -->
+<!-- from: extensions/loyalty-points/src/balance.route.ts -->
 
 ```ts
-  routes: [
-    {
-      kind: 'api',
-      method: 'GET',
-      path: '/balance/:customerId',
-      permission: 'loyalty-points.accounts.read',
+  kind: 'api',
+  method: 'GET',
+  path: '/balance/:customerId',
+  permission: 'loyalty-points.accounts.read',
 ```
 
-Your handler has a hard time limit, a request-size limit, and errors become a structured 500 carrying the request ID (logged
-with your extension name; the cause is never shown to the shopper).
+Base stands between your handler and the browser:
+
+- **Limits.** The request body is capped by the bytes actually read (a chunked upload counts too), and the handler has a
+  deadline that also covers a streamed response body. When it passes, the request's signal aborts and the stream is cut.
+  Cancellation is cooperative: honour `ctx.signal` (and pass `request.signal` to `fetch`), because JavaScript cannot stop a
+  handler that ignores it.
+- **Errors** become a structured 500 carrying the request ID. They are logged with your extension name as the error class
+  and a scrubbed message (credentials and tokens redacted); the cause is never shown to the shopper.
+- **Response filtering.** `Set-Cookie`, `Location`, `Content-Security-Policy`(-Report-Only), `Strict-Transport-Security`,
+  `Clear-Site-Data`, `Refresh`, `Link`, CORS and hop-by-hop headers are removed. `X-Content-Type-Options: nosniff` is always
+  set. `Cache-Control` is `private, no-store` unless the route declares `cache: { maxAgeSeconds, scope? }` (`scope: 'public'`
+  only on a public `GET`). Only `application/json`, `text/plain`, `text/csv`, `application/octet-stream`, `application/pdf`
+  and `image/*` are served; anything else is a 500.
+- **Opt-ins**, declared on the route: `redirects: true` allows a 3xx with a `Location` to a path or http(s) URL;
+  `html: true` allows `text/html`, served with `Content-Security-Policy: sandbox` (no scripts).
+- `HEAD` is answered from a `GET` route, without the body.
 
 ### 8. Background work
 
@@ -202,16 +232,39 @@ retry policy; the first thing shed under load is `bulk`.
 
 ## The rules
 
-1. **Depend only on `@sold/extension-sdk`.** An ESLint rule rejects imports of any other Base package, dynamic
-   `import()`, and reaching into `packages/` or `apps/` by path. If you need something Base does not expose, that is a
-   request for a new extension point, not a reason to reach in.
+1. **Depend only on `@sold/extension-sdk`.** The ESLint boundary is an allowlist (see "Boundaries" below): anything not on
+   it is an error, including `require`, computed `import()` and reaching outside your package by path. If you need
+   something Base does not expose, that is a request for a new extension point, not a reason to reach in.
 2. **Name every database object `ext_<name>_*`** and never touch Base tables.
 3. **Be idempotent.** Observers and jobs are delivered at least once.
-4. **Declare `performance.hotPath` honestly** and keep interceptors free of I/O.
+4. **Declare `performance.hotPath` honestly** and keep interceptors free of I/O (in `*.interceptor.ts` files).
 5. **Never put secrets in code or settings without `secrets`.** Stored credentials are envelope-encrypted.
 6. **Permissions are namespaced** (`<name>.<thing>.<action>`) and declared in the manifest.
 7. **An extension error never crashes a request.** Base isolates it, logs it with your name, and exposes per-extension
    metrics. Design for that: fail open or closed on purpose.
+
+## Boundaries: file names and imports
+
+The lint rule (`packages/config/extension-boundary.js`) is an **allowlist** and it keys off file names, so name files by what
+they are:
+
+| File                                       | May import                                                                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `*.interceptor.ts` (cart/checkout hooks)   | `@sold/extension-sdk`, your own files, `zod`, `semver`, `react`, `node:crypto/util/buffer/events/stream/url/path/assert/timers/perf_hooks` |
+| `index.ts`, settings, blocks, helpers, ... | the same: everything that is not one of the files below is strict, so helpers cannot smuggle I/O into an interceptor                       |
+| `*.observer.ts`, `*.job.ts`, `*.route.ts`  | the above, plus `node:http/https/http2/net/tls/dgram/dns/fs/os/zlib` and the packages in **your** `package.json` `dependencies`            |
+| `*.test.ts`, `*.spec.ts`                   | the I/O set, `vitest` and your `devDependencies`                                                                                           |
+
+Never allowed anywhere, even if listed in `dependencies`: `@sold/*` other than the SDK, `pg`, `ioredis`, `redis`, `undici`,
+`postgres`, `drizzle-orm`, `next`, `node:child_process`, `node:worker_threads`, `node:vm`, `node:module`. Also banned:
+`require`, `createRequire`, `import()` with a computed argument, `import.meta.resolve`, `eval`, `new Function`, relative imports
+that leave your package (including through `node_modules`), and process-level hooks (`process.on`, `process.exit`, ...). The
+rules cover `.ts`, `.tsx`, `.js`, `.mjs` and `.cjs`.
+
+To extend: add a library to your package's `dependencies` (it is then importable from your I/O files); if a library is pure
+and interceptors need it too, add it to `purePackages` in `packages/config/extension-boundary.js` in a reviewed Base change.
+Use `ctx.db` rather than a database driver: it applies Base's pools, timeouts and budgets. Like the runtime guard, the lint
+is a guardrail, not a sandbox (see ADR-0004).
 
 ## Load order, compatibility, enabling and disabling
 

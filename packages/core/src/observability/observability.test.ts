@@ -41,6 +41,7 @@ describe('redactDeep', () => {
     expect(scrubString('connect postgres://sold:hunter2@db:5432/sold failed')).not.toContain(
       'hunter2',
     );
+    expect(scrubString('redis://:hunter2@cache:6379 down')).not.toContain('hunter2'); // no user name
     expect(scrubString('Authorization: Bearer abcdef123456789')).not.toContain('abcdef123456789');
     expect(scrubString('key sk_live_abcdefghij12345 used')).not.toContain('abcdefghij12345');
     expect(scrubString('retry with password=hunter2&x=1')).not.toContain('hunter2');

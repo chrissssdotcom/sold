@@ -9,6 +9,8 @@ import { Gauge, Registry, collectDefaultMetrics } from 'prom-client';
 import * as generated from '../.generated/extensions';
 import { baseQueues, registerBaseJobs } from './jobs';
 import { bearerMatches } from '../src/server/auth';
+import { installExtensionSafety } from '../src/server/extension-safety';
+import { createExtensionSafetyMetrics } from '../src/server/metrics';
 
 const env = loadEnv({ ...process.env, SOLD_ROLE: 'worker' });
 const log = createLogger({
@@ -47,6 +49,13 @@ new Gauge({
   { version: env.SOLD_VERSION, environment: env.SOLD_ENVIRONMENT, build_id: env.SOLD_BUILD_ID },
   1,
 );
+// Extension code can leave floating promises and throwing timers behind. In the worker those would end the
+// process (and every other extension's jobs with it): contain what is attributable, exit on the rest.
+installExtensionSafety({
+  log,
+  metrics: createExtensionSafetyMetrics(registry),
+  exitOnUnattributed: true,
+});
 const depth = new Gauge({
   name: 'sold_queue_depth',
   help: 'Jobs waiting to run',

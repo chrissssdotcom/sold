@@ -5,6 +5,7 @@ export * from './kernel';
 export * from './load-order';
 export * from './permissions';
 export * from './pg-stores';
+export * from './process-guard';
 export * from './route-table';
 export * from './service-registry';
 export * from './settings';

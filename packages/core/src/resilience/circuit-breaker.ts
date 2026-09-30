@@ -27,6 +27,11 @@ export interface CircuitBreakerOptions {
   cooldownMs?: number;
   now?: () => number;
   onStateChange?: (name: string, state: BreakerState) => void;
+  /**
+   * Errors that say nothing about the health of the protected dependency (for example "our own pool is full").
+   * They are neither a failure nor a success: they never move the breaker.
+   */
+  ignoreError?: (error: unknown) => boolean;
 }
 
 export class CircuitBreaker {
@@ -35,7 +40,10 @@ export class CircuitBreaker {
   private readonly cooldownMs: number;
   private readonly now: () => number;
   private readonly onStateChange: ((name: string, state: BreakerState) => void) | undefined;
+  private readonly ignoreError: ((error: unknown) => boolean) | undefined;
   private failures = 0;
+  /** Bumped every time the circuit opens, so a call that started before that can be recognised as stale. */
+  private epoch = 0;
   private openedAt = 0;
   private current: BreakerState = 'closed';
   private trialInFlight = false;
@@ -46,12 +54,19 @@ export class CircuitBreaker {
     this.cooldownMs = opts.cooldownMs ?? 5_000;
     this.now = opts.now ?? Date.now;
     this.onStateChange = opts.onStateChange;
+    this.ignoreError = opts.ignoreError;
   }
 
   get state(): BreakerState {
     if (this.current === 'open' && this.now() - this.openedAt >= this.cooldownMs)
       return 'half-open';
     return this.current;
+  }
+
+  /** Open the circuit now (for example when a call proved it blocks the event loop). Idempotent while open. */
+  trip(): void {
+    if (this.current === 'open' && this.state === 'open') return;
+    this.open();
   }
 
   async exec<T>(fn: () => Promise<T>): Promise<T> {
@@ -63,21 +78,38 @@ export class CircuitBreaker {
       this.trialInFlight = true;
       this.transition('half-open');
     }
+    const epoch = this.epoch;
+    const isTrial = state === 'half-open';
+    // A call that started while the circuit was closed and finishes after it opened is stale: what it saw
+    // says nothing about the dependency now. Only the half-open trial may close an open circuit.
+    const stale = () => !isTrial && (this.epoch !== epoch || this.current !== 'closed');
     try {
       const result = await fn();
-      this.failures = 0;
-      this.transition('closed');
+      if (isTrial) {
+        this.failures = 0;
+        this.transition('closed');
+      } else if (!stale()) {
+        this.failures = 0;
+      }
       return result;
     } catch (error) {
-      this.failures++;
-      if (state === 'half-open' || this.failures >= this.threshold) {
-        this.openedAt = this.now();
-        this.transition('open');
+      if (this.ignoreError?.(error)) throw error;
+      if (isTrial) {
+        this.open();
+      } else if (!stale()) {
+        this.failures++;
+        if (this.failures >= this.threshold) this.open();
       }
       throw error;
     } finally {
-      if (state === 'half-open') this.trialInFlight = false;
+      if (isTrial) this.trialInFlight = false;
     }
+  }
+
+  private open(): void {
+    this.epoch++;
+    this.openedAt = this.now();
+    this.transition('open');
   }
 
   private transition(next: BreakerState): void {

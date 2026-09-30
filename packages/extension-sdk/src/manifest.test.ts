@@ -166,6 +166,54 @@ describe('defineExtension', () => {
     expect(() => defineExtension({ ...base, routes: [{ ...r, public: true }] })).not.toThrow();
   });
 
+  it('route response opt-outs are validated: a shared cache only on public GET routes', () => {
+    const r = {
+      kind: 'api' as const,
+      method: 'GET' as const,
+      path: '/x',
+      public: true,
+      handler: async () => new Response(),
+    };
+    expect(() =>
+      defineExtension({
+        ...base,
+        routes: [
+          { ...r, cache: { maxAgeSeconds: 60, scope: 'public' }, html: true, redirects: true },
+        ],
+      }),
+    ).not.toThrow();
+    expect(
+      issuesOf({
+        ...base,
+        routes: [{ ...r, method: 'POST' as const, cache: { maxAgeSeconds: 60, scope: 'public' } }],
+      }).join(),
+    ).toMatch(/shared \(public\) cache/);
+    expect(
+      issuesOf({
+        ...base,
+        routes: [
+          {
+            ...r,
+            public: undefined,
+            permission: 'base.orders.read',
+            cache: { maxAgeSeconds: 60, scope: 'public' },
+          },
+        ],
+      }).join(),
+    ).toMatch(/shared \(public\) cache/);
+    expect(
+      issuesOf({ ...base, routes: [{ ...r, cache: { maxAgeSeconds: 0 } }] }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('rejects the reserved job queue name that would collide with the observer queue', () => {
+    const job = { queue: 'events', class: 'default' as const, handler: async () => undefined };
+    expect(issuesOf({ ...base, jobs: [job] }).join()).toMatch(/queue name "events" is reserved/);
+    expect(() =>
+      defineExtension({ ...base, jobs: [{ ...job, queue: 'event-cleanup' }] }),
+    ).not.toThrow();
+  });
+
   it('webhooks must be public; admin routes must not be', () => {
     const hook = {
       kind: 'webhook' as const,

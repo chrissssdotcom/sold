@@ -16,6 +16,11 @@ class MemoryStore implements SettingsStore {
   async load(ext: string) {
     return structuredClone(this.rows.get(ext) ?? []);
   }
+  async loadSecrets() {
+    return [...this.rows.entries()].flatMap(([extension, rows]) =>
+      rows.filter((r) => r.ciphertext !== null).map((r) => ({ extension, ...structuredClone(r) })),
+    );
+  }
   async save(ext: string, c: { upsert: SettingsRow[]; remove: string[] }) {
     this.saves++;
     const byKey = new Map((this.rows.get(ext) ?? []).map((r) => [r.key, r]));

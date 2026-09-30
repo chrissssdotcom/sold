@@ -1,6 +1,11 @@
-import type { Db } from '@sold/db';
-import type { Env } from '../env';
-import { EnvelopeCrypto, rootKeyFromBase64 } from '../crypto/envelope';
+import {
+  scopedExtensionDbProvider,
+  sharedExtensionDbProvider,
+  type Db,
+  type ExtensionRoleConfig,
+} from '@sold/db';
+import { extensionDbIsolation, type Env } from '../env';
+import { EnvelopeCrypto, rootKeyFromBase64, rootKeysFromList } from '../crypto/envelope';
 import type { JobQueue } from '../jobs/queue';
 import { Kernel, type BaseServiceProvider, type KernelDeps, type KernelLogger } from './kernel';
 import type { InterceptorMetric } from './interceptor-runner';
@@ -22,10 +27,20 @@ export interface GeneratedRegistry {
  */
 const LOCAL_DEV_KEY = Buffer.alloc(32, 'sold-local-dev-key-not-a-secret').toString('base64');
 
+/**
+ * The root key is read here, once, when the kernel is created; nothing in this module keeps it afterwards. (Other
+ * code that reads `SOLD_SECRET_KEY` lazily from the environment is not affected, so the variable stays in
+ * `process.env`: in-process extension code can read it. That is the ADR-0004 trust model, not a sandbox.)
+ * `SOLD_SECRET_KEY_PREVIOUS` (comma-separated) lets a rotation decrypt values written under the old key.
+ */
 export function cryptoFromEnv(
-  env: Pick<Env, 'SOLD_SECRET_KEY' | 'SOLD_ENVIRONMENT'>,
+  env: Pick<Env, 'SOLD_SECRET_KEY' | 'SOLD_SECRET_KEY_PREVIOUS' | 'SOLD_ENVIRONMENT'>,
 ): EnvelopeCrypto {
-  if (env.SOLD_SECRET_KEY) return new EnvelopeCrypto(rootKeyFromBase64(env.SOLD_SECRET_KEY));
+  if (env.SOLD_SECRET_KEY)
+    return new EnvelopeCrypto(
+      rootKeyFromBase64(env.SOLD_SECRET_KEY),
+      rootKeysFromList(env.SOLD_SECRET_KEY_PREVIOUS),
+    );
   if (env.SOLD_ENVIRONMENT === 'local') return new EnvelopeCrypto(rootKeyFromBase64(LOCAL_DEV_KEY));
   throw new Error('SOLD_SECRET_KEY is required outside local');
 }
@@ -60,10 +75,46 @@ export interface CreateKernelOptions {
   onInterceptorMetric?(metric: InterceptorMetric): void;
 }
 
+/** Role parameters for extension database isolation, or `undefined` when it is off. */
+export function extensionRoleConfig(
+  env: Env,
+  hasExtensions = true,
+): ExtensionRoleConfig | undefined {
+  if (extensionDbIsolation(env) !== 'enforce') return undefined;
+  if (!env.SOLD_EXTENSION_DB_SECRET) {
+    if (!hasExtensions) return undefined; // nothing to isolate: an instance without extensions needs no secret
+    throw new Error(
+      'SOLD_EXTENSION_DB_SECRET (>= 32 characters) is required when extension database isolation is enforced and extensions are enabled',
+    );
+  }
+  return {
+    rolePrefix: env.SOLD_EXTENSION_DB_ROLE_PREFIX,
+    secret: env.SOLD_EXTENSION_DB_SECRET,
+    statementTimeoutMs: env.DB_STATEMENT_TIMEOUT_MS,
+    lockTimeoutMs: env.DB_LOCK_TIMEOUT_MS,
+    idleInTransactionTimeoutMs: env.DB_IDLE_IN_TX_TIMEOUT_MS,
+  };
+}
+
 /** Wire a kernel from the environment and the build-time registry. Pure: no I/O until `migrate`/`reconcile`/`start`. */
 export function createKernel(opts: CreateKernelOptions): Kernel {
   const { env, registry } = opts;
+  const isolation = extensionRoleConfig(
+    env,
+    registry.entries.some((e) => e.enabled),
+  );
   return Kernel.create({
+    extensionDb: isolation
+      ? scopedExtensionDbProvider({
+          primaryUrl: env.DATABASE_EXTENSION_URL ?? env.DATABASE_URL,
+          replicaUrl: env.DATABASE_REPLICA_URL,
+          config: isolation,
+          poolMax: env.SOLD_EXTENSION_DB_POOL_MAX,
+          pooler: env.DATABASE_POOLER,
+          applicationName: `sold-${env.SOLD_ROLE}`,
+        })
+      : sharedExtensionDbProvider(opts.db),
+    ...(isolation ? { isolation } : {}),
     config: { extensions: registry.entries, services: registry.services },
     candidates: registry.candidates,
     extensionRoot: (name) => registry.roots[name],

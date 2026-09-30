@@ -58,6 +58,20 @@ export interface RouteDefinition<C = RouteContext> {
   permission?: string;
   /** Explicitly unauthenticated. Required (and only allowed) for webhooks, which verify their own signature. */
   public?: boolean;
+  /**
+   * Base filters every extension response (no cookies, no CSP/HSTS/Refresh/Link/CORS headers, `nosniff`, and
+   * `Cache-Control: private, no-store` by default). These flags are the explicit, reviewable opt-outs.
+   *
+   * `redirects`: the route may answer 3xx with a `Location` header (otherwise a 3xx is an error).
+   */
+  redirects?: boolean;
+  /** `html`: the route may return `text/html`. It is served with `Content-Security-Policy: sandbox` (no scripts). */
+  html?: boolean;
+  /**
+   * `cache`: the response may be cached for `maxAgeSeconds`. `scope: 'public'` (shared caches and the CDN) is only
+   * allowed on a public GET route; the default is `private` (the shopper's own browser).
+   */
+  cache?: { maxAgeSeconds: number; scope?: 'private' | 'public' };
   handler(request: Request, ctx: C & { params: Record<string, string> }): Promise<Response>;
 }
 
@@ -191,6 +205,12 @@ export const reservedExtensionNames = [
   'sdk',
 ] as const;
 
+/**
+ * Local job queue names that would collide with a queue Base creates for the extension. `events` is the observer
+ * delivery queue (`ext.<name>.events`), so a job queue of that name would receive observer deliveries.
+ */
+export const reservedJobQueueNames = ['events'] as const;
+
 const isFn = z.custom<(...args: never[]) => unknown>(
   (v) => typeof v === 'function',
   'must be a function',
@@ -252,6 +272,14 @@ const shapeSchema = z.object({
         path: z.string(),
         permission: z.string().optional(),
         public: z.boolean().optional(),
+        redirects: z.boolean().optional(),
+        html: z.boolean().optional(),
+        cache: z
+          .object({
+            maxAgeSeconds: z.number().int().min(1).max(86_400),
+            scope: z.enum(['private', 'public']).optional(),
+          })
+          .optional(),
         handler: isFn,
       }),
     )
@@ -404,6 +432,8 @@ export function defineExtension<S extends SettingsSchema = SettingsSchema>(
       issues.push(`${where}: webhooks must be public (they verify their own signature)`);
     if (r.public === true && r.kind === 'admin')
       issues.push(`${where}: admin routes cannot be public`);
+    if (r.cache?.scope === 'public' && (r.public !== true || r.method !== 'GET'))
+      issues.push(`${where}: a shared (public) cache is only allowed on a public GET route`);
     if (
       hasPerm &&
       !permissionKeys.has(r.permission as string) &&
@@ -435,6 +465,9 @@ export function defineExtension<S extends SettingsSchema = SettingsSchema>(
       );
   }
 
+  for (const j of def.jobs ?? [])
+    if ((reservedJobQueueNames as readonly string[]).includes(j.queue))
+      issues.push(`jobs: queue name "${j.queue}" is reserved (it carries observer deliveries)`);
   const localQueues = new Set((def.jobs ?? []).map((j) => j.queue));
   for (const s of def.schedules ?? [])
     if (!localQueues.has(s.queue)) issues.push(`schedules: queue "${s.queue}" has no matching job`);

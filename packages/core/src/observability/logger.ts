@@ -19,7 +19,7 @@ const MAX_DEPTH = 8;
 /** Credentials embedded in text: `scheme://user:pass@host`, `Bearer xxx`, `sk_live_...`, long hex/base64 secrets in `key=value`. */
 export function scrubString(value: string): string {
   return value
-    .replaceAll(/(\b[a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s/@]+)@/gi, `$1${REDACTED}@`)
+    .replaceAll(/(\b[a-z][a-z0-9+.-]*:\/\/)([^\s/:@]*):([^\s/@]+)@/gi, `$1${REDACTED}@`)
     .replaceAll(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, `Bearer ${REDACTED}`)
     .replaceAll(/\b(?:sk|pk|rk|whsec)_(?:live|test)_[A-Za-z0-9]{8,}/g, REDACTED)
     .replaceAll(

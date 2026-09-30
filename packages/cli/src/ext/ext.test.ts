@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { defineConfig } from '@sold/core/config';
 import { discoverExtensions } from '@sold/core/extensions/discovery';
 import { lintExtensionMigrationDir } from '@sold/db/lint';
@@ -9,7 +10,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { cleanup, makeContext, tempDir } from '../testing';
 import { extDocs, renderExtensionReference } from './docs';
 import { extList } from './list';
-import { baseRangeFor, extNew, validateExtensionName } from './scaffold';
+import { baseRangeFor, extNew, validateExtensionName, validateTitle } from './scaffold';
 import { extSync } from './sync';
 
 const repoRoot = resolve(fileURLToPath(new URL('../../../..', import.meta.url)));
@@ -39,8 +40,11 @@ describe('ext:new', () => {
         'extensions/gift-wrap/README.md',
         'extensions/gift-wrap/migrations/0001_init.sql',
         'extensions/gift-wrap/package.json',
+        'extensions/gift-wrap/src/hello.route.ts',
         'extensions/gift-wrap/src/index.test.ts',
         'extensions/gift-wrap/src/index.ts',
+        'extensions/gift-wrap/src/record-order.observer.ts',
+        'extensions/gift-wrap/src/settings.ts',
         'extensions/gift-wrap/tsconfig.json',
       ]);
       const pkg = JSON.parse(readFileSync(join(dir, 'extensions/gift-wrap/package.json'), 'utf8'));
@@ -51,7 +55,11 @@ describe('ext:new', () => {
       });
       const index = readFileSync(join(dir, 'extensions/gift-wrap/src/index.ts'), 'utf8');
       expect(index).toContain("name: 'gift-wrap'");
-      expect(index).toContain('INSERT INTO ext_gift_wrap_events');
+      const observer = readFileSync(
+        join(dir, 'extensions/gift-wrap/src/record-order.observer.ts'),
+        'utf8',
+      );
+      expect(observer).toContain('INSERT INTO ext_gift_wrap_events');
       expect(
         readFileSync(join(dir, 'extensions/gift-wrap/migrations/0001_init.sql'), 'utf8'),
       ).toContain('CREATE TABLE ext_gift_wrap_events');
@@ -76,6 +84,74 @@ describe('ext:new', () => {
       expect(existsSync(join(dir, 'extensions/wrapper'))).toBe(false);
       await extNew(ctx, { name: 'wrapper' });
       await expect(extNew(ctx, { name: 'wrapper' })).rejects.toThrow(/already exists/);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('a hostile --title cannot inject a JSON key or TypeScript code', async () => {
+    const dir = setup();
+    try {
+      const ctx = makeContext({ cwd: dir });
+      const jsonAttack =
+        'x", "scripts": {"postinstall": "id"}, "pnpm": {"onlyBuiltDependencies": ["evil"]}, "y": "';
+      await extNew(ctx, { name: 'demo-a', title: jsonAttack });
+      const pkg = JSON.parse(readFileSync(join(dir, 'extensions/demo-a/package.json'), 'utf8'));
+      expect(pkg.description).toBe(jsonAttack); // stored as text, not parsed as JSON
+      expect(pkg.pnpm).toBeUndefined();
+      expect(Object.keys(pkg.scripts)).toEqual(['typecheck', 'lint', 'test']); // the template's, untouched
+
+      const tsAttack = `x'; (await import('node:child_process')).execSync('id'); const _='  back\\slash "dq"`;
+      await extNew(ctx, { name: 'demo-b', title: tsAttack });
+      const source = readFileSync(join(dir, 'extensions/demo-b/src/index.ts'), 'utf8');
+      const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.ES2022, true);
+      expect(ts.transpileModule(source, { reportDiagnostics: true }).diagnostics).toEqual([]);
+      // Nothing but the template's own statements: imports and the default export.
+      expect(
+        file.statements
+          .map((st) => ts.SyntaxKind[st.kind])
+          .filter((k) => k !== 'ImportDeclaration'),
+      ).toEqual(['ExportAssignment']);
+      let description: string | undefined;
+      const visit = (n: ts.Node): void => {
+        if (
+          ts.isPropertyAssignment(n) &&
+          ts.isIdentifier(n.name) &&
+          n.name.text === 'description' &&
+          ts.isStringLiteral(n.initializer)
+        )
+          description ??= n.initializer.text; // the manifest's own, first in the file
+        ts.forEachChild(n, visit);
+      };
+      visit(file);
+      expect(description).toBe(tsAttack);
+      // and the README carries it as plain text
+      expect(readFileSync(join(dir, 'extensions/demo-b/README.md'), 'utf8')).toContain(tsAttack);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('rejects titles that are empty, too long, or contain control/line-break/bidi characters', async () => {
+    for (const bad of [
+      '',
+      '   ',
+      'x'.repeat(201),
+      'a\nb',
+      'a\rb',
+      'a\u0000b',
+      'a\u202Eb',
+      'a\u2028b',
+      'a\u200Bb',
+    ])
+      expect(() => validateTitle(bad), JSON.stringify(bad)).toThrow(/invalid --title/);
+    expect(() => validateTitle('Offer gift wrapping (v2) — "fast"')).not.toThrow();
+    const dir = setup();
+    try {
+      await expect(
+        extNew(makeContext({ cwd: dir }), { name: 'demo-c', title: 'a\nb' }),
+      ).rejects.toThrow(/invalid --title/);
+      expect(existsSync(join(dir, 'extensions/demo-c'))).toBe(false); // nothing half-written
     } finally {
       cleanup(dir);
     }
@@ -144,7 +220,7 @@ describe('ext:sync, ext:list, ext:docs (real repository)', () => {
       expect(r.extensions).toEqual(['loyalty-points']);
       const src = readFileSync(join(repoRoot, rel), 'utf8');
       expect(src).toContain(
-        "import loyaltyPoints from '../../../extensions/loyalty-points/src/index';",
+        "import ext_loyalty_points from '../../../extensions/loyalty-points/src/index';",
       );
     } finally {
       rmSync(join(repoRoot, rel), { force: true });

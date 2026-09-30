@@ -1,12 +1,15 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { defineConfig } from '../config';
 import {
   discoverExtensions,
   DiscoveryError,
   firstPartyDirectories,
+  registryIdentifier,
   renderRegistryModule,
+  type DiscoveryResult,
 } from './discovery';
 
 const repoRoot = resolve(fileURLToPath(new URL('../../../..', import.meta.url)));
@@ -60,9 +63,9 @@ describe('renderRegistryModule', () => {
     const r = await discoverExtensions(repoRoot, async () => config(['loyalty-points']));
     const out = renderRegistryModule(r, resolve(repoRoot, 'apps/web/.generated/extensions.ts'));
     expect(out).toContain(
-      "import loyaltyPoints from '../../../extensions/loyalty-points/src/index';",
+      "import ext_loyalty_points from '../../../extensions/loyalty-points/src/index';",
     );
-    expect(out).toContain("{ manifest: loyaltyPoints, origin: 'first-party' }");
+    expect(out).toContain("{ manifest: ext_loyalty_points, origin: 'first-party' }");
     expect(out).toContain('"loyalty-points": [\n    "0001_init.sql"\n  ]');
     expect(out).toContain('GENERATED');
   });
@@ -72,5 +75,108 @@ describe('renderRegistryModule', () => {
     const out = renderRegistryModule(r, resolve(repoRoot, 'apps/web/.generated/extensions.ts'));
     expect(out).toContain('export const candidates: ExtensionCandidate[] = [\n];');
     expect(out).not.toContain('import loyalty');
+  });
+});
+
+describe('renderRegistryModule: generated identifiers are always valid', () => {
+  const reserved = [
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'false',
+    'finally',
+    'for',
+    'function',
+    'if',
+    'import',
+    'in',
+    'instanceof',
+    'new',
+    'null',
+    'return',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'typeof',
+    'var',
+    'void',
+    'while',
+    'with',
+    'yield',
+    'let',
+    'static',
+    'implements',
+    'interface',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'await',
+    'async',
+    'of',
+    'get',
+    'set',
+    'arguments',
+    'eval',
+    'undefined',
+    'type',
+    'from',
+    'as',
+    // names of the generated module's own exports
+    'candidates',
+    'entries',
+    'services',
+    'roots',
+  ];
+  const fakeResult = (names: string[]): DiscoveryResult =>
+    ({
+      extensions: names.map((name) => ({
+        name,
+        directory: name,
+        entry: `/r/extensions/${name}/src/index.ts`,
+        root: `/r/extensions/${name}`,
+        origin: 'instance',
+        enabled: true,
+        manifest: {},
+        migrationFiles: [],
+      })),
+      entries: [],
+      services: {},
+      warnings: [],
+    }) as unknown as DiscoveryResult;
+  const syntaxErrors = (source: string) =>
+    ts.transpileModule(source, {
+      reportDiagnostics: true,
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).diagnostics ?? [];
+
+  it.each(reserved)('an extension named "%s" yields a module that compiles', (name) => {
+    const out = renderRegistryModule(fakeResult([name]), '/r/apps/web/.generated/extensions.ts');
+    expect(
+      syntaxErrors(out).map((d) => ts.flattenDiagnosticMessageText(d.messageText, ' ')),
+    ).toEqual([]);
+  });
+
+  it('all reserved words together, and names that only differ by hyphens, stay distinct', () => {
+    const names = [
+      ...new Set([...reserved.filter((n) => n.length >= 2), 'a-1', 'a1', 'ab-cd', 'ab-cd2']),
+    ];
+    const out = renderRegistryModule(fakeResult(names), '/r/apps/web/.generated/extensions.ts');
+    expect(syntaxErrors(out)).toEqual([]);
+    expect(new Set(names.map(registryIdentifier)).size).toBe(names.length);
   });
 });

@@ -1,8 +1,9 @@
-import { base, extensionBoundary, coreFrameworkFree } from '@sold/config/eslint';
+import { base, extensionBoundaryConfigs, coreFrameworkFree } from '@sold/config/eslint';
 
 export default [
   ...base,
-  { ...extensionBoundary, files: ['extensions/**/*.{ts,tsx}'] },
+  // Allowlist boundary for everything under extensions/ (ts, tsx, js, mjs, cjs), per file tier and per package.
+  ...extensionBoundaryConfigs({ root: import.meta.dirname }),
   { ...coreFrameworkFree, files: ['packages/core/**/*.{ts,tsx}'] },
   // Scripts/config files may use console
   {

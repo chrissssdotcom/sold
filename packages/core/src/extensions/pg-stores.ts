@@ -1,4 +1,4 @@
-import { and, eq, inArray, schema, type PrimaryDb } from '@sold/db';
+import { and, eq, inArray, isNull, schema, type PrimaryDb } from '@sold/db';
 
 const { extensionRegistry, extensionSettings } = schema;
 import type { SettingsRow, SettingsStore } from './settings';
@@ -16,6 +16,16 @@ export class PgSettingsStore implements SettingsStore {
       .from(extensionSettings)
       .where(eq(extensionSettings.extension, extension));
     return rows.map((r) => ({ key: r.key, value: r.value, ciphertext: r.ciphertext }));
+  }
+
+  async loadSecrets(): Promise<(SettingsRow & { extension: string })[]> {
+    const rows = await this.db
+      .select()
+      .from(extensionSettings)
+      .where(isNull(extensionSettings.value));
+    return rows
+      .filter((r) => r.ciphertext !== null)
+      .map((r) => ({ extension: r.extension, key: r.key, value: null, ciphertext: r.ciphertext }));
   }
 
   async save(
@@ -57,7 +67,12 @@ export class PgSettingsStore implements SettingsStore {
   }
 }
 
-export type ExtensionState = 'enabled' | 'disabled';
+/**
+ * `installing`: the row exists but `onInstall` has not yet succeeded. It is stored as `state = 'disabled'` with neither
+ * `last_enabled_at` nor `last_disabled_at` set (the table's CHECK allows only enabled/disabled, and Base migrations
+ * are not changed for this): a state no completed lifecycle can produce, because every completed transition stamps one.
+ */
+export type ExtensionState = 'enabled' | 'disabled' | 'installing';
 
 export interface RegistryRow {
   name: string;
@@ -74,11 +89,22 @@ export class PgExtensionRegistry {
     return rows.map((r) => ({
       name: r.name,
       version: r.version,
-      state: r.state as ExtensionState,
+      state:
+        r.state === 'disabled' && r.lastEnabledAt === null && r.lastDisabledAt === null
+          ? 'installing'
+          : (r.state as ExtensionState),
     }));
   }
 
-  async upsert(name: string, version: string, state: ExtensionState): Promise<void> {
+  /** Record that an install started (state `installing`, see `ExtensionState`). Idempotent. */
+  async beginInstall(name: string, version: string): Promise<void> {
+    await this.db
+      .insert(extensionRegistry)
+      .values({ name, version, state: 'disabled' })
+      .onConflictDoNothing();
+  }
+
+  async upsert(name: string, version: string, state: 'enabled' | 'disabled'): Promise<void> {
     const now = new Date();
     const stamps = state === 'enabled' ? { lastEnabledAt: now } : { lastDisabledAt: now };
     await this.db

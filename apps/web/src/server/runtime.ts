@@ -2,6 +2,7 @@ import { loadEnv, type Env } from '@sold/core/env';
 import { createLogger, type Logger } from '@sold/core/observability';
 import { createDb, type Db } from '@sold/db';
 import { Redis } from 'ioredis';
+import { installExtensionSafety } from './extension-safety';
 import { createMetrics, type Metrics, type PoolStats } from './metrics';
 
 /**
@@ -60,6 +61,9 @@ function create(): Runtime {
     { version: env.SOLD_VERSION, environment: env.SOLD_ENVIRONMENT, buildId: env.SOLD_BUILD_ID },
     pools,
   );
+  // Contain extension failures that escape their handlers (floating promises, throwing timers) and record
+  // interceptors that block the event loop. Next.js already logs and continues on anything unattributed.
+  installExtensionSafety({ log, metrics: metrics.safety, exitOnUnattributed: false });
   return { env, log, db, metrics, redis, draining: { value: false } };
 }
 

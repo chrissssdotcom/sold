@@ -1,11 +1,11 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { lintExtensionStatements } from './extension';
+import { lintExtensionStatements, type ExtensionLintOptions } from './extension';
 import { parseMigration, SqlSyntaxError } from './parser';
 import { lintStatements, rules, type Finding } from './rules';
 
 export { rules, type Finding } from './rules';
-export { extensionPrefix } from './extension';
+export { extensionPrefix, type ExtensionLintOptions } from './extension';
 export { SqlSyntaxError } from './parser';
 
 export interface FileReport {
@@ -37,13 +37,16 @@ export async function lintMigrationSql(sql: string): Promise<Finding[]> {
 export async function lintExtensionMigrationSql(
   sql: string,
   extension: string,
+  opts: ExtensionLintOptions = {},
 ): Promise<Finding[]> {
   try {
     const statements = await parseMigration(sql);
-    return await lintExtensionStatements(statements, extension, {
-      noTransaction: hasNoTransactionHeader(sql),
-      source: sql,
-    });
+    return await lintExtensionStatements(
+      statements,
+      extension,
+      { noTransaction: hasNoTransactionHeader(sql), source: sql },
+      opts,
+    );
   } catch (error) {
     return [syntaxFinding(error)];
   }
@@ -65,8 +68,11 @@ async function lintDir(
 
 export const lintMigrationDir = (dir: string): Promise<FileReport[]> =>
   lintDir(dir, lintMigrationSql);
-export const lintExtensionMigrationDir = (dir: string, extension: string): Promise<FileReport[]> =>
-  lintDir(dir, (sql) => lintExtensionMigrationSql(sql, extension));
+export const lintExtensionMigrationDir = (
+  dir: string,
+  extension: string,
+  opts: ExtensionLintOptions = {},
+): Promise<FileReport[]> => lintDir(dir, (sql) => lintExtensionMigrationSql(sql, extension, opts));
 
 export function describeRules(): string[] {
   return rules.map((r) => `${r.id}: ${r.describe}`);

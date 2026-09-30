@@ -21,14 +21,44 @@ import { getRuntime, type Runtime } from './runtime';
  */
 export type KernelStatus =
   | { state: 'booting' }
-  | { state: 'ready'; extensions: string[] }
+  | {
+      state: 'ready';
+      extensions: string[];
+      /** Extensions running degraded (e.g. a stored secret no configured key can decrypt). The kernel itself is healthy. */
+      degraded: { extension: string; reason: string }[];
+      extensionDbIsolation: 'enforce' | 'off';
+    }
   | { state: 'failed'; error: string };
 
 interface Slot {
   promise: Promise<Kernel>;
   status: KernelStatus;
+  kernel?: Kernel;
 }
-const holder = globalThis as unknown as { __soldKernel?: Slot };
+
+/**
+ * Next bundles route handlers, instrumentation and the worker separately, so this module can be instantiated more
+ * than once per process; the kernel must still be a singleton. The slot therefore lives on `globalThis` under a
+ * registry symbol (`Symbol.for`, shared across module copies), defined NON-ENUMERABLE so it does not show up in
+ * `Object.keys(globalThis)`, `JSON.stringify` or a casual inspection.
+ *
+ * This is NOT a security boundary: any in-process code can call `Symbol.for(...)` and reach the kernel. Extensions
+ * are trusted, reviewed, in-process code (ADR-0004); what is enforced is database privilege, lint and review. The
+ * slot deliberately holds nothing but the kernel promise and a status: no key material and no environment.
+ */
+const SLOT = Symbol.for('sold.web.kernel.slot');
+
+function readSlot(): Slot | undefined {
+  return (globalThis as unknown as Record<symbol, Slot | undefined>)[SLOT];
+}
+function writeSlot(slot: Slot): void {
+  Object.defineProperty(globalThis, SLOT, {
+    value: slot,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+}
 
 const registry: GeneratedRegistry = generated as unknown as GeneratedRegistry;
 
@@ -94,21 +124,38 @@ async function boot(rt: Runtime, slot: Slot): Promise<Kernel> {
     await kernel.declareQueues();
   }
   // Migrations and lifecycle transitions are release-pipeline steps (`pnpm db:migrate`); a process only verifies.
+  // Also verifies extension database isolation (each extension's role connects and is least-privilege).
   await kernel.verifyMigrations();
+  // Warms the settings snapshots and starts the background refresh. An extension whose settings cannot be read
+  // degrades (reported by `kernelStatus`); it does not fail the boot.
   await kernel.warm();
-  slot.status = {
-    state: 'ready',
-    extensions: kernel.extensions.map((e) => `${e.manifest.name}@${e.manifest.version}`),
-  };
+  slot.kernel = kernel;
+  const health = kernel.health();
+  slot.status = readyStatus(kernel);
   rt.log.info(
-    { extensions: slot.status.extensions, disabled: kernel.disabledNames },
+    {
+      extensions: slot.status.extensions,
+      disabled: kernel.disabledNames,
+      degraded: health.settings.degraded.map((d) => d.extension),
+      extensionDbIsolation: health.extensionDb.mode,
+    },
     'extension kernel ready',
   );
   return kernel;
 }
 
+function readyStatus(kernel: Kernel): Extract<KernelStatus, { state: 'ready' }> {
+  const health = kernel.health();
+  return {
+    state: 'ready',
+    extensions: kernel.extensions.map((e) => `${e.manifest.name}@${e.manifest.version}`),
+    degraded: health.settings.degraded,
+    extensionDbIsolation: health.extensionDb.mode,
+  };
+}
+
 export function getKernel(): Promise<Kernel> {
-  if (!holder.__soldKernel) {
+  if (!readSlot()) {
     const rt = getRuntime();
     const slot: Slot = {
       promise: undefined as unknown as Promise<Kernel>,
@@ -121,13 +168,23 @@ export function getKernel(): Promise<Kernel> {
     });
     // A rejected boot is observed via readiness; do not let it surface as an unhandled rejection.
     slot.promise.catch(() => undefined);
-    holder.__soldKernel = slot;
+    writeSlot(slot);
   }
-  return holder.__soldKernel.promise;
+  return (readSlot() as Slot).promise;
 }
 
+/** Current status. Degradation is live: it is recomputed from the kernel on every call, not frozen at boot. */
 export function kernelStatus(): KernelStatus {
-  return holder.__soldKernel?.status ?? { state: 'booting' };
+  const slot = readSlot();
+  if (slot?.kernel && slot.status.state === 'ready') return readyStatus(slot.kernel);
+  return slot?.status ?? { state: 'booting' };
+}
+
+/** Stop the kernel's timers and release the extension database pools (graceful shutdown). */
+export async function closeKernel(): Promise<void> {
+  const slot = readSlot();
+  if (!slot?.kernel) return;
+  await slot.kernel.close();
 }
 
 /** Readiness probe: succeeds once the kernel booted, throws with the reason if it failed. */

@@ -15,9 +15,16 @@ Scaffolded by `pnpm sold ext:new __NAME__`. Everything here is yours to change: 
 
 | File | Contribution |
 |---|---|
-| `src/index.ts` | the manifest: settings, a permission, an API route, and an observer |
+| `src/index.ts` | the manifest: it wires the pieces below together |
+| `src/settings.ts` | the settings schema (becomes an admin form) |
+| `src/record-order.observer.ts` | an observer: reacts to `order.placed`, asynchronously, with retries |
+| `src/hello.route.ts` | an API route mounted at `/x/__NAME__/hello` |
 | `migrations/0001_init.sql` | its own table, `__PREFIX__events` (extensions never touch Base tables) |
 | `src/index.test.ts` | a unit test that runs the route handler and the observer |
+
+File names matter: the lint rule reads them. `*.interceptor.ts` (cart/checkout interceptors) must be pure, with no network,
+filesystem or process access. `*.observer.ts`, `*.job.ts` and `*.route.ts` may use I/O; every other file is strict too.
+Third-party libraries go in this package's `dependencies` and are importable from the I/O files only.
 
 Rules that keep upgrades boring: depend only on `@sold/extension-sdk`; name every table `__PREFIX__*`; declare
 `performance.hotPath` honestly; keep interceptors free of I/O. See `docs/extending.md`.

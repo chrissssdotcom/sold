@@ -7,7 +7,12 @@ import {
 } from '@sold/extension-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Semaphore } from '../resilience/semaphore';
-import { installHotPathGuard, uninstallHotPathGuard } from './hot-path-guard';
+import {
+  installHotPathGuard,
+  onHotPathBlocked,
+  uninstallHotPathGuard,
+  type HotPathBlockedEvent,
+} from './hot-path-guard';
 import { InterceptorRunner, type InterceptorMetric } from './interceptor-runner';
 import type { LoadedExtension } from './load-order';
 
@@ -41,7 +46,12 @@ function loaded(
 
 function runner(
   extensions: LoadedExtension[],
-  over: { pool?: Semaphore; breaker?: { failureThreshold?: number; cooldownMs?: number } } = {},
+  over: {
+    pool?: Semaphore;
+    breaker?: { failureThreshold?: number; cooldownMs?: number };
+    perExtension?: { size?: number; queue?: number };
+    maxQueueWaitMs?: number;
+  } = {},
 ) {
   const metrics: InterceptorMetric[] = [];
   const logs: { level: string; fields: Record<string, unknown> }[] = [];
@@ -58,6 +68,8 @@ function runner(
     onMetric: (m) => metrics.push(m),
     onLog: (level, fields) => logs.push({ level, fields }),
     ...(over.breaker ? { breaker: over.breaker } : {}),
+    ...(over.perExtension ? { perExtension: over.perExtension } : {}),
+    ...(over.maxQueueWaitMs !== undefined ? { maxQueueWaitMs: over.maxQueueWaitMs } : {}),
   });
   return { r, metrics, logs };
 }
@@ -314,5 +326,348 @@ describe('InterceptorRunner', () => {
       expect(await res.text()).toBe('ok');
       expect(hits).toBe(1);
     });
+  });
+});
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+describe('InterceptorRunner: results are read inside the guarded region', () => {
+  const cases: [string, () => unknown][] = [
+    [
+      'a throwing veto getter',
+      () => ({
+        get veto() {
+          throw new Error('boom');
+        },
+      }),
+    ],
+    [
+      'a throwing modify getter',
+      () => ({
+        veto: undefined,
+        get modify() {
+          throw new Error('boom');
+        },
+      }),
+    ],
+    [
+      'a Proxy that throws on any trap',
+      () =>
+        new Proxy(
+          {},
+          {
+            get() {
+              throw new Error('boom');
+            },
+            ownKeys() {
+              throw new Error('boom');
+            },
+          },
+        ),
+    ],
+    [
+      'a modify Proxy that throws',
+      () => ({
+        modify: new Proxy(
+          {},
+          {
+            ownKeys() {
+              throw new Error('boom');
+            },
+            getPrototypeOf() {
+              throw new Error('boom');
+            },
+          },
+        ),
+      }),
+    ],
+    ['a modify that cannot be cloned', () => ({ modify: { quantity: () => 1 } })],
+  ];
+
+  for (const [label, make] of cases) {
+    it(`${label} is an ordinary extension error: run() resolves and failPolicy applies`, async () => {
+      const open = runner([loaded('bad', 0, [{ handler: make as never, failPolicy: 'open' }])]);
+      expect(await open.r.run('cart.item.adding', payload)).toEqual({ payload, veto: null });
+      expect(open.metrics[0]).toMatchObject({ applied: 'continued' });
+      expect(open.metrics[0]?.outcome).toMatch(/^(error|invalid-modify)$/);
+      const closed = runner([loaded('bad', 0, [{ handler: make as never, failPolicy: 'closed' }])]);
+      expect((await closed.r.run('cart.item.adding', payload)).veto?.code).toBe(
+        'extension_unavailable',
+      );
+    });
+  }
+
+  it('a result that throws when read counts against the breaker', async () => {
+    const { r, metrics } = runner(
+      [
+        loaded('bad', 0, [
+          {
+            handler: (() => ({
+              get veto() {
+                throw new Error('boom');
+              },
+            })) as never,
+          },
+        ]),
+      ],
+      { breaker: { failureThreshold: 2, cooldownMs: 60_000 } },
+    );
+    for (let i = 0; i < 3; i++) await r.run('cart.item.adding', payload);
+    expect(metrics.map((m) => m.outcome)).toEqual(['error', 'error', 'bypassed']);
+  });
+
+  it('invalid modifications count as failures, so a persistently invalid extension is bypassed', async () => {
+    const { r, metrics } = runner(
+      [loaded('sloppy', 0, [{ handler: () => ({ modify: { quantity: -5 } }) }])],
+      { breaker: { failureThreshold: 3, cooldownMs: 60_000 } },
+    );
+    for (let i = 0; i < 5; i++) await r.run('cart.item.adding', payload);
+    expect(metrics.map((m) => m.outcome)).toEqual([
+      'invalid-modify',
+      'invalid-modify',
+      'invalid-modify',
+      'bypassed',
+      'bypassed',
+    ]);
+  });
+});
+
+describe('InterceptorRunner: veto text is inert', () => {
+  it('strips control, bidi and angle-bracket characters and truncates to 200 characters', async () => {
+    const evil = `<img src=x onerror=alert(1)>\n\u202Eevil\u2066 \u200Bok\u0007 ${'A'.repeat(500)}`;
+    const { r } = runner([
+      loaded('rude', 0, [{ handler: () => ({ veto: { code: 'no', message: evil } }) }]),
+    ]);
+    const { veto } = await r.run('cart.item.adding', payload);
+    for (const ch of ['<', '>', '\u202E', '\u2066', '\u200B', '\u0007', '\n'])
+      expect(veto?.message).not.toContain(ch);
+    expect(veto?.message).toContain('img src=x onerror=alert(1)');
+    expect([...(veto?.message ?? '')].length).toBeLessThanOrEqual(200);
+  });
+
+  it('falls back to a generic message when nothing printable is left', async () => {
+    const { r } = runner([
+      loaded('rude', 0, [{ handler: () => ({ veto: { code: 'no', message: '\u202E<>\n' } }) }]),
+    ]);
+    expect((await r.run('cart.item.adding', payload)).veto?.message).toBe('Not allowed (rude).');
+  });
+});
+
+describe('InterceptorRunner: pools, budgets and breakers', () => {
+  it('queue wait is not charged to the budget: a healthy 8ms interceptor never times out on a 1-slot pool', async () => {
+    const { r, metrics } = runner(
+      [loaded('healthy', 0, [{ failPolicy: 'closed', handler: () => sleep(8) }], 20)],
+      { pool: new Semaphore('one', 1, 50), maxQueueWaitMs: 1_000 },
+    );
+    await Promise.all(Array.from({ length: 8 }, () => r.run('cart.item.adding', payload)));
+    expect(metrics.map((m) => m.outcome)).toEqual(Array(8).fill('ok'));
+  });
+
+  it('a bounded wait fails fast as saturated, never as a timeout, and does not open the breaker', async () => {
+    const { r, metrics } = runner(
+      [loaded('healthy', 0, [{ failPolicy: 'closed', handler: () => sleep(8) }], 20)],
+      {
+        pool: new Semaphore('one', 1, 50),
+        maxQueueWaitMs: 12,
+        breaker: { failureThreshold: 2, cooldownMs: 60_000 },
+      },
+    );
+    await Promise.all(Array.from({ length: 12 }, () => r.run('cart.item.adding', payload)));
+    const outcomes = metrics.map((m) => m.outcome);
+    expect(outcomes).not.toContain('timeout');
+    expect(outcomes).not.toContain('bypassed'); // saturation is not the extension's failure
+    expect(outcomes).toContain('saturated');
+    expect(outcomes).toContain('ok');
+    // and once the load is gone it serves again
+    expect((await r.run('cart.item.adding', payload)).veto).toBeNull();
+    expect(metrics.at(-1)?.outcome).toBe('ok');
+  });
+
+  it('a slow neighbour cannot starve an innocent fail-closed extension (per-extension pools)', async () => {
+    const { r, metrics } = runner(
+      [
+        loaded('slow', 0, [{ handler: () => sleep(60) }], 40),
+        loaded('victim', 1, [{ failPolicy: 'closed', handler: () => undefined }], 20),
+      ],
+      {
+        pool: new Semaphore('global', 8, 8),
+        perExtension: { size: 4, queue: 32 },
+        maxQueueWaitMs: 5,
+        breaker: { failureThreshold: 2, cooldownMs: 60_000 },
+      },
+    );
+    const results = await Promise.all(
+      Array.from({ length: 16 }, () => r.run('cart.item.adding', payload)),
+    );
+    const victim = metrics.filter((m) => m.extension === 'victim').map((m) => m.outcome);
+    expect(victim).toEqual(Array(16).fill('ok'));
+    expect(results.every((x) => x.veto === null)).toBe(true);
+    expect(metrics.some((m) => m.extension === 'slow' && m.outcome !== 'ok')).toBe(true);
+  });
+
+  it('a stale success from before the breaker opened cannot close it (only the half-open trial can)', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((res) => (release = res));
+    let calls = 0;
+    const { r, metrics } = runner(
+      [
+        loaded(
+          'flappy',
+          0,
+          [
+            {
+              handler: () => {
+                calls++;
+                if (calls === 1) return held.then(() => undefined); // in flight while the breaker opens
+                throw new Error('down');
+              },
+            },
+          ],
+          40,
+        ),
+      ],
+      { breaker: { failureThreshold: 2, cooldownMs: 60_000 } },
+    );
+    const inflight = r.run('cart.item.adding', payload);
+    await r.run('cart.item.adding', payload);
+    await r.run('cart.item.adding', payload);
+    release();
+    await inflight;
+    await r.run('cart.item.adding', payload);
+    expect(metrics.map((m) => m.outcome)).toEqual(['error', 'error', 'ok', 'bypassed']);
+  });
+});
+
+describe('InterceptorRunner: a blocked event loop is detected, attributed and cut off', () => {
+  const busy = (ms: number) => {
+    const end = performance.now() + ms;
+    while (performance.now() < end);
+  };
+
+  it('a synchronous stall past the budget is reported with the interceptor named', async () => {
+    const events: HotPathBlockedEvent[] = [];
+    const off = onHotPathBlocked((e) => events.push(e));
+    try {
+      const { r } = runner([
+        loaded('stall', 0, [{ name: 'spin', timeoutMs: 10, handler: () => busy(25) }], 10),
+      ]);
+      await r.run('cart.item.adding', payload);
+    } finally {
+      off();
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      extension: 'stall',
+      interceptor: 'spin',
+      budgetMs: 10,
+      source: 'sync-call',
+    });
+    expect(events[0]?.blockedMs).toBeGreaterThanOrEqual(24);
+  });
+
+  it('one call blocking for more than 5x its budget opens the breaker at once (next call is bypassed)', async () => {
+    let calls = 0;
+    const { r, metrics } = runner(
+      [loaded('stall', 0, [{ handler: () => (calls++, busy(60)) }], 10)],
+      { breaker: { failureThreshold: 5, cooldownMs: 60_000 } },
+    );
+    await r.run('cart.item.adding', payload);
+    await r.run('cart.item.adding', payload);
+    expect(calls).toBe(1);
+    expect(metrics.map((m) => m.outcome)).toEqual(['timeout', 'bypassed']);
+  });
+
+  it('a stall under 5x the budget is discarded and counted as a normal failure only', async () => {
+    let calls = 0;
+    const { r, metrics } = runner(
+      [loaded('stall', 0, [{ handler: () => (calls++, busy(25)) }], 10)],
+      { breaker: { failureThreshold: 5, cooldownMs: 60_000 } },
+    );
+    await r.run('cart.item.adding', payload);
+    await r.run('cart.item.adding', payload);
+    expect(calls).toBe(2);
+    expect(metrics.map((m) => m.outcome)).toEqual(['timeout', 'timeout']);
+  });
+});
+
+describe('hot-path guard: what it stops, and what it records', () => {
+  it('refuses to spawn a process, start a worker, send UDP, resolve DNS or Atomics.wait', async () => {
+    const cp = await import('node:child_process');
+    const dgram = await import('node:dgram');
+    const dns = await import('node:dns');
+    const wt = await import('node:worker_threads');
+    const attempts: Record<string, () => unknown> = {
+      execSync: () => cp.execSync('echo nope'),
+      spawn: () => cp.spawn('true'),
+      worker: () => new wt.Worker('process.exit(0)', { eval: true }),
+      udp: () => dgram.createSocket('udp4').send('x', 9, '127.0.0.1'),
+      dns: () => dns.lookup('localhost', () => undefined),
+      atomics: () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20),
+    };
+    for (const [label, attempt] of Object.entries(attempts)) {
+      const { r, metrics } = runner([
+        loaded(`no-${label.toLowerCase()}`, 0, [{ handler: async () => void attempt() }]),
+      ]);
+      await r.run('cart.item.adding', payload);
+      expect(metrics[0]?.outcome, label).toBe('violation');
+    }
+  });
+
+  it('a handler that swallows the violation still fails the call', async () => {
+    const { r, metrics } = runner([
+      loaded('sneaky', 0, [
+        {
+          handler: async () => {
+            await fetch('http://127.0.0.1:9/').catch(() => undefined);
+          },
+        },
+      ]),
+    ]);
+    await r.run('cart.item.adding', payload);
+    expect(metrics[0]?.outcome).toBe('violation');
+  });
+
+  it('records (and fails the call for) a write on an already-open socket, without wedging it', async () => {
+    const net = await import('node:net');
+    let received = '';
+    const server = net.createServer((s) => s.on('data', (d) => (received += d)));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const socket = net.connect((server.address() as AddressInfo).port, '127.0.0.1');
+    await new Promise((r) => socket.once('connect', r));
+    try {
+      const { r, metrics } = runner([
+        loaded('pooled', 0, [{ handler: async () => void socket.write('ping') }]),
+      ]);
+      await r.run('cart.item.adding', payload);
+      expect(metrics[0]?.outcome).toBe('violation');
+      await sleep(30);
+      expect(received).toBe('ping'); // detection, not prevention: the shared connection is not corrupted
+    } finally {
+      socket.destroy();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('does not flag console output (stdout/stderr are sockets when piped)', async () => {
+    const { r, metrics } = runner([
+      loaded('chatty', 0, [{ handler: async () => void process.stderr.write('') }]),
+    ]);
+    await r.run('cart.item.adding', payload);
+    expect(metrics[0]?.outcome).toBe('ok');
+  });
+
+  it('removes Object.prototype pollution and fails the call', async () => {
+    const { r, metrics } = runner([
+      loaded('polluter', 0, [
+        {
+          handler: async () => {
+            (Object.prototype as Record<string, unknown>).isAdmin = true;
+          },
+        },
+      ]),
+    ]);
+    await r.run('cart.item.adding', payload);
+    expect(metrics[0]?.outcome).toBe('violation');
+    expect(({} as Record<string, unknown>).isAdmin).toBeUndefined();
   });
 });
