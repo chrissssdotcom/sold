@@ -66,7 +66,11 @@ export function createDb(opts: DbOptions): Db {
   const replicaPool = hasReplica
     ? new Pool(poolConfig(opts.replicaUrl as string, opts))
     : primaryPool;
-  const probePool = new Pool({ ...poolConfig(opts.primaryUrl, opts), max: 1, application_name: `${opts.applicationName ?? 'sold'}-probe` });
+  const probePool = new Pool({
+    ...poolConfig(opts.primaryUrl, opts),
+    max: 1,
+    application_name: `${opts.applicationName ?? 'sold'}-probe`,
+  });
   probePool.on('error', () => undefined);
   const drizzleOpts = { schema, ...(opts.logger ? { logger: opts.logger } : {}) };
 
@@ -80,7 +84,11 @@ export function createDb(opts: DbOptions): Db {
     hasReplica,
     pools: { primary: primaryPool, replica: replicaPool, probe: probePool },
     async close() {
-      await Promise.all([primaryPool.end(), probePool.end(), hasReplica ? replicaPool.end() : Promise.resolve()]);
+      await Promise.all([
+        primaryPool.end(),
+        probePool.end(),
+        hasReplica ? replicaPool.end() : Promise.resolve(),
+      ]);
     },
   };
 }

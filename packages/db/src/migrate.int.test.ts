@@ -491,7 +491,10 @@ describe('FeatureFlags during an outage', () => {
     const { FeatureFlags } = await import('./flags');
     let t = 0;
     const counter = new QueryCounter();
-    const broken = createDb({ primaryUrl: 'postgres://sold:sold@127.0.0.1:1/none', logger: counter });
+    const broken = createDb({
+      primaryUrl: 'postgres://sold:sold@127.0.0.1:1/none',
+      logger: counter,
+    });
     try {
       const flags = new FeatureFlags(broken.replica, 5_000, () => t);
       for (let i = 0; i < 50; i++) expect(await flags.isEnabled('any', true)).toBe(true);

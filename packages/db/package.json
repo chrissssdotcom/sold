@@ -21,6 +21,7 @@
     "generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@libpg-query/parser": "^17.6.10",
     "drizzle-orm": "^0.45.3",
     "pg": "^8.23.0"
   },

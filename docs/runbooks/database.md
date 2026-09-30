@@ -39,10 +39,18 @@ gets `ALTER ROLE sold_grafana SET statement_timeout` in its Phase 7 migration. T
   1. Expand: add nullable column / new table / new index (`CONCURRENTLY`). Ship code that writes both.
   2. Backfill in batches from a job. Never in the migration.
   3. Switch reads. Later release: contract (drop) with `-- sold:allow destructive: <reason>`.
-- `pnpm db:lint-migrations` (CI) rejects: non-concurrent index builds, `NOT NULL` without default, volatile defaults,
-  `ALTER COLUMN TYPE`, `SET NOT NULL`, unvalidated FK/CHECK, `ADD UNIQUE/PRIMARY KEY` without `USING INDEX`,
-  FKs without explicit `ON DELETE`, drops/renames/truncates, `LOCK`, `VACUUM FULL`, `CLUSTER`, non-concurrent `REINDEX`.
-  Brand-new tables created in the same migration are exempt.
+- `pnpm db:lint-migrations` (CI) parses every migration with PostgreSQL's own parser (libpg-query, WASM) and applies the
+  rules to the AST, so quoting, casing, multi-action `ALTER TABLE` and inline constraints are handled exactly.
+  `describeRules()` lists them. In short it rejects: non-concurrent index builds, `NOT NULL` without default, volatile
+  or unknown-volatility defaults, `serial` / identity / `GENERATED STORED` columns, inline `CHECK`/`REFERENCES` on
+  `ADD COLUMN`, `ALTER COLUMN TYPE`, `SET NOT NULL`, unvalidated FK/CHECK, `ADD UNIQUE/PRIMARY KEY/EXCLUDE` without
+  `USING INDEX`, FKs without explicit `ON DELETE`, drops/renames/truncates of existing objects, `ATTACH/DETACH PARTITION`,
+  unbounded `UPDATE`/`DELETE`, `DO`/`EXECUTE` dynamic SQL, `LOCK`, `VACUUM FULL`, `CLUSTER`, non-concurrent `REINDEX` and
+  `REFRESH MATERIALIZED VIEW`, and files that do not parse. Objects created earlier in the same migration are exempt.
+  A rule is waived only by `-- sold:allow <rule>: <reason>` on the lines directly above the statement.
+  Limits: it cannot see schema state, so it cannot know that an index target is a partitioned parent (where
+  `CONCURRENTLY` fails at runtime), and it cannot analyse what a `DO` block does (hence `dynamic-sql`). The parser is
+  PostgreSQL 17: syntax new in 18 is reported as a syntax error.
 - Files containing `CREATE INDEX CONCURRENTLY` start with `-- sold:no-transaction` and separate statements with a
   `--> statement-breakpoint` line. A failed concurrent build leaves an INVALID index; with `IF NOT EXISTS` a naive
   rerun would skip it and journal a broken index (a UNIQUE one would silently enforce nothing). The runner therefore

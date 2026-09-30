@@ -1,58 +1,73 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { lintExtensionSql } from './extension';
+import { lintExtensionStatements, extensionPrefix } from './extension';
+import { parseMigration, SqlSyntaxError } from './parser';
 import { lintStatements, rules, type Finding } from './rules';
-import { splitSql } from './sql';
 
 export { rules, type Finding } from './rules';
-export { splitSql, normalize } from './sql';
 export { extensionPrefix } from './extension';
+export { SqlSyntaxError } from './parser';
 
 export interface FileReport {
   file: string;
   findings: Finding[];
 }
 
-export function lintMigrationSql(sql: string): Finding[] {
-  const header = sql.split('\n').slice(0, 10).join('\n');
-  const noTransaction = /^\s*--\s*sold:no-transaction\b/m.test(header);
-  return lintStatements(splitSql(sql), { noTransaction });
-}
+const NO_TX = /^\s*--\s*sold:no-transaction\b/m;
+const hasNoTransactionHeader = (sql: string) => NO_TX.test(sql.split('\n').slice(0, 10).join('\n'));
 
-export async function lintMigrationDir(dir: string): Promise<FileReport[]> {
-  const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
-  const reports: FileReport[] = [];
-  for (const file of files) {
-    reports.push({
-      file: join(dir, file),
-      findings: lintMigrationSql(await readFile(join(dir, file), 'utf8')),
-    });
+const syntaxFinding = (error: unknown): Finding => ({
+  rule: 'syntax-error',
+  message: error instanceof SqlSyntaxError ? error.message : String(error),
+  line: 1,
+  statement: '',
+});
+
+/** Lint one migration. Async because the PostgreSQL parser is loaded lazily (WASM). */
+export async function lintMigrationSql(sql: string): Promise<Finding[]> {
+  try {
+    const statements = await parseMigration(sql);
+    return lintStatements(statements, { noTransaction: hasNoTransactionHeader(sql), source: sql });
+  } catch (error) {
+    return [syntaxFinding(error)];
   }
-  return reports;
-}
-
-export function describeRules(): string[] {
-  return rules.map((r) => `${r.id}: ${r.describe}`);
 }
 
 /** Lint one extension migration: online-safety rules plus the extension namespace rules. */
-export function lintExtensionMigrationSql(sql: string, extension: string): Finding[] {
-  const header = sql.split('\n').slice(0, 10).join('\n');
-  const noTransaction = /^\s*--\s*sold:no-transaction\b/m.test(header);
-  return lintExtensionSql(sql, extension, { noTransaction });
+export async function lintExtensionMigrationSql(
+  sql: string,
+  extension: string,
+): Promise<Finding[]> {
+  try {
+    const statements = await parseMigration(sql);
+    return await lintExtensionStatements(statements, extension, {
+      noTransaction: hasNoTransactionHeader(sql),
+      source: sql,
+    });
+  } catch (error) {
+    return [syntaxFinding(error)];
+  }
 }
 
-export async function lintExtensionMigrationDir(
+async function lintDir(
   dir: string,
-  extension: string,
+  lint: (sql: string) => Promise<Finding[]>,
 ): Promise<FileReport[]> {
   const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
   const reports: FileReport[] = [];
-  for (const file of files) {
+  for (const file of files)
     reports.push({
       file: join(dir, file),
-      findings: lintExtensionMigrationSql(await readFile(join(dir, file), 'utf8'), extension),
+      findings: await lint(await readFile(join(dir, file), 'utf8')),
     });
-  }
   return reports;
+}
+
+export const lintMigrationDir = (dir: string): Promise<FileReport[]> =>
+  lintDir(dir, lintMigrationSql);
+export const lintExtensionMigrationDir = (dir: string, extension: string): Promise<FileReport[]> =>
+  lintDir(dir, (sql) => lintExtensionMigrationSql(sql, extension));
+
+export function describeRules(): string[] {
+  return rules.map((r) => `${r.id}: ${r.describe}`);
 }

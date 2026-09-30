@@ -114,6 +114,7 @@ SELECT sold_ensure_monthly_partitions('outbox_events', 3);
 
 -- Safety-net timeouts at database level. Under PgBouncer transaction pooling, session-level SET
 -- and startup parameters are unreliable, so these defaults apply to every connection.
+-- sold:allow dynamic-sql: sets statement/lock/idle-in-transaction timeouts on the CURRENT database (its name is not known at authoring time); only ALTER DATABASE ... SET with constant values
 DO $$
 BEGIN
   EXECUTE format('ALTER DATABASE %I SET statement_timeout = ''5s''', current_database());
