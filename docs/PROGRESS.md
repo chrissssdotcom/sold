@@ -163,6 +163,26 @@ RBAC + `authorize()`, OIDC, SAML, SCIM, audit log (hash-chained), break-glass, K
 
 Threat model, security review, full k6/chaos suite and capacity report, waiting room and degradation ladder rehearsal, DB failover/restore drills, sale-readiness dry run, N-1 → N upgrade test, customer creation and promotion through the documented flow, final docs.
 
+## Phase 1 review round 2 (independent adversarial review of the extension framework)
+
+An independent reviewer reproduced critical and high findings against real PostgreSQL. Two fix agents were then cut off
+by an API rate limit; their work was checkpointed in the tree. **Honest status:**
+
+- Verified by me after the cut-off: whole repo typechecks, lints, unit tests (core 265, db 222, sdk 17, cli 228, config 19, web 69) and
+  integration suites (db 55, core 17, web 18, commerce 58, payments 26, content 6) all pass against local PostgreSQL 16 + Redis.
+- Landed (evidence: code plus tests in the tree): per-extension DB roles and pools wired through `createKernel`
+  (`extension-roles.ts`, `extension-db.ts`, integration test with non-superuser role), allowlist extension-migration linter with
+  non-waivable rules and adversarial cases, quoted-identifier purge with owned-object tracking, secret-key rotation env
+  (`SOLD_SECRET_KEY_PREVIOUS`), isolation env switches, process-level guard for extension failures, HTTP safety layer
+  (`extension-safety.ts`), ESLint extension-boundary allowlist (`packages/config/extension-boundary.js`), template and
+  loyalty-points restructured into `*.observer.ts` / `*.interceptor.ts` / `*.route.ts` / `*.job.ts`.
+- ADR-0004 states the trust model plainly: extensions are trusted in-process code, not sandboxed.
+- **Not yet re-audited against the reviewer's scripts** (they were not re-run by an independent party): the full finding list
+  (interceptor-runner fairness and result-read hardening, settings snapshot refresh/freeze/size cap, `installing` lifecycle state,
+  chunked-body and response-header handling, `ext:new` escaping, reserved-word names). Some of these have tests in the tree;
+  treat all as "implemented, pending independent re-review" until a second review round signs them off. Extension jobs still
+  ignore pg-boss `job.signal` (known gap).
+
 ## Decisions log
 
 | Date       | Decision                                                                                                                                                  | Rationale                                                                                                                                                     |
