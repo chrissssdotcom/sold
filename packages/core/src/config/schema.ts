@@ -84,6 +84,49 @@ export const soldConfigSchema = z
         waitingRoom: z.boolean().default(false),
       })
       .default({ mode: 'normal', waitingRoom: false }),
+    /**
+     * Commerce behaviour that is a business decision rather than code. Shipping zones and tax tables are validated by
+     * `@sold/commerce` (`parseShippingConfig`, `parseTaxTable`) so this package stays free of domain dependencies.
+     */
+    commerce: z
+      .object({
+        /** Where goods ship from (drives origin-sourced tax rules). */
+        origin: z
+          .object({
+            line1: z.string().min(1),
+            city: z.string().min(1),
+            region: z.string().default(''),
+            postalCode: z.string().min(1),
+            country: z.string().length(2),
+          })
+          .default({
+            line1: '1 Example St',
+            city: 'Sydney',
+            region: 'NSW',
+            postalCode: '2000',
+            country: 'AU',
+          }),
+        /** Displayed prices already include tax (AU/NZ/UK/EU style). */
+        pricesIncludeTax: z.boolean().default(true),
+        /** How long an unpaid order holds its stock. */
+        paymentWindowMinutes: z.number().int().min(1).max(1440).default(30),
+        /** Redis admission gate in front of Postgres stock holds: for hot-SKU drops. Requires REDIS_URL. */
+        inventoryGate: z.boolean().default(false),
+        shipping: z.record(z.string(), z.unknown()).optional(),
+        tax: z.record(z.string(), z.unknown()).optional(),
+      })
+      .default({
+        origin: {
+          line1: '1 Example St',
+          city: 'Sydney',
+          region: 'NSW',
+          postalCode: '2000',
+          country: 'AU',
+        },
+        pricesIncludeTax: true,
+        paymentWindowMinutes: 30,
+        inventoryGate: false,
+      }),
     theme: z
       .object({
         preset: z.string().default('default'),

@@ -1,0 +1,59 @@
+import { z } from 'zod';
+import { addressSchema, CommerceError } from '@sold/commerce';
+import { errorResponse, json, readJson } from '../../../server/commerce-http';
+import { getCommerce } from '../../../server/commerce';
+import { getCommerceMetrics } from '../../../server/commerce-metrics';
+import { route } from '../../../server/route';
+import { getRuntime } from '../../../server/runtime';
+import { PRIVATE, requireCartId } from '../../../server/storefront';
+
+export const dynamic = 'force-dynamic';
+
+// The cart comes from the signed cookie, never from the body.
+const body = z.strictObject({
+  email: z.email().max(254),
+  shippingAddress: addressSchema,
+  billingAddress: addressSchema.optional(),
+  shippingMethodId: z.string().min(1).max(64),
+});
+
+export const POST = route(async (request) => {
+  const metrics = getCommerceMetrics();
+  const started = performance.now();
+  try {
+    const input = body.parse(await readJson(request));
+    const cartId = requireCartId(request);
+    const idempotencyKey = request.headers.get('idempotency-key');
+    if (!idempotencyKey)
+      throw new CommerceError(
+        'idempotency_key_required',
+        'An Idempotency-Key header is required',
+        400,
+      );
+    const { checkout } = await getCommerce();
+    const { order, replayed } = await checkout.place(
+      getRuntime().db.primary,
+      { ...input, cartId, customerId: null },
+      idempotencyKey,
+    );
+    metrics.checkout.inc({ outcome: replayed ? 'replayed' : 'placed' });
+    return json(
+      {
+        order: {
+          id: order.orderId,
+          number: order.number,
+          status: order.status,
+          total: order.total.toJSON(),
+          payBy: order.payBy,
+        },
+        replayed,
+      },
+      { status: replayed ? 200 : 201, headers: PRIVATE },
+    );
+  } catch (error) {
+    metrics.checkout.inc({ outcome: error instanceof CommerceError ? error.code : 'error' });
+    return errorResponse(error);
+  } finally {
+    metrics.checkoutDuration.observe((performance.now() - started) / 1000);
+  }
+});
