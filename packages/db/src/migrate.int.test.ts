@@ -2,14 +2,15 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { getTableColumns, getTableName, sql } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
+import { getTableColumns, getTableName, is, sql } from 'drizzle-orm';
+import { PgTable as PgTableClass, type PgTable } from 'drizzle-orm/pg-core';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '@sold/testing';
 import { createDb, QueryCounter, type Db } from './client';
 import { lintMigrationDir } from './lint';
 import { migrate } from './migrate';
+import * as schemaModule from './schema';
 import { featureFlags, migrationJournal, outboxEvents } from './schema';
 
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
@@ -37,7 +38,13 @@ describe('migrations on an empty database', () => {
   });
 
   it('matches the Drizzle schema (columns, types, nullability)', async () => {
-    const tables: PgTable[] = [featureFlags, outboxEvents, migrationJournal];
+    const tables: PgTable[] = [
+      featureFlags,
+      outboxEvents,
+      migrationJournal,
+      // Every commerce table declared in Drizzle must match the SQL migrations.
+      ...(Object.values(schemaModule).filter((v) => is(v, PgTableClass)) as PgTable[]),
+    ].filter((t, i, all) => all.indexOf(t) === i);
     for (const table of tables) {
       const name = getTableName(table);
       const { rows } = await db.pools.primary.query<{
@@ -59,8 +66,11 @@ describe('migrations on an empty database', () => {
         expect(a?.is_nullable === 'NO', `${name}.${col.name} NOT NULL`).toBe(col.notNull);
         const expectedType = col.getSQLType().replace(/\(.*\)/, '');
         const pgType = a?.data_type ?? '';
-        const normalized =
-          expectedType === 'timestamp with time zone' ? 'timestamp with time zone' : expectedType;
+        const aliases: Record<string, string> = {
+          char: 'character',
+          'text[]': 'ARRAY',
+        };
+        const normalized = aliases[expectedType] ?? expectedType;
         expect(pgType, `${name}.${col.name} type`).toBe(normalized);
       }
     }
