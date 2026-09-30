@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@sold/core": "workspace:*",
-    "@sold/db": "workspace:*"
+    "@sold/db": "workspace:*",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@sold/config": "workspace:*",
