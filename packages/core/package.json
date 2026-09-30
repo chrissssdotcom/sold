@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./config": "./src/config/index.ts",
     "./env": "./src/env/index.ts",
-    "./observability": "./src/observability/index.ts"
+    "./observability": "./src/observability/index.ts",
+    "./resilience": "./src/resilience/circuit-breaker.ts",
+    "./traffic": "./src/traffic.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

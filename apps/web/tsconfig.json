@@ -1,0 +1,15 @@
+{
+  "extends": "@sold/config/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "incremental": true,
+    "allowJs": false,
+    "plugins": [{ "name": "next" }],
+    "types": ["node"],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", ".next/types/**/*.ts", "*.config.ts"],
+  "exclude": ["node_modules"]
+}

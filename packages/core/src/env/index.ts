@@ -20,6 +20,10 @@ export const envSchema = z
     SOLD_SCALE_MODE: z.enum(['normal', 'prescale']).default('normal'),
     /** `<base-version>+<customer>.<instance-build>` (Section 8C.6). */
     SOLD_VERSION: z.string().default('0.0.0+dev.0'),
+    /** Identifies the build (git SHA); namespaces the shared cache so rolling deploys never mix builds. */
+    SOLD_BUILD_ID: z.string().default('dev'),
+    /** Seconds to keep serving (readiness=false) after SIGTERM so load balancers can drain. */
+    SOLD_DRAIN_SECONDS: z.coerce.number().int().min(0).max(120).default(10),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
@@ -30,6 +34,8 @@ export const envSchema = z
     DATABASE_REPLICA_URL: optionalUrl,
     /** Direct (non-pooled) URL used by migrations, which need session semantics. */
     DATABASE_MIGRATION_URL: optionalUrl,
+    /** `pgbouncer` = transaction pooling: timeouts come from database-level defaults, not startup params. */
+    DATABASE_POOLER: z.enum(['none', 'pgbouncer']).default('none'),
     DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(10),
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).default(5_000),
     DB_LOCK_TIMEOUT_MS: z.coerce.number().int().min(100).default(2_000),

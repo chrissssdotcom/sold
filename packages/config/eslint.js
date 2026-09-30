@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import globals from 'globals';
 
 /**
  * Modules that extensions must never import (Base internals).
@@ -30,9 +31,11 @@ export const base = tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       '**/.terraform/**',
+      '**/.generated/**',
     ],
   },
   js.configs.recommended,
+  { files: ['**/*.{js,cjs,mjs}'], languageOptions: { globals: globals.node } },
   ...tseslint.configs.recommended,
   {
     rules: {

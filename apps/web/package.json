@@ -1,0 +1,39 @@
+{
+  "name": "@sold/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --project unit",
+    "predev": "node scripts/build-cache-handler.mjs",
+    "prebuild": "node scripts/build-cache-handler.mjs",
+    "test:integration": "vitest run --project integration"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@sold/core": "workspace:*",
+    "@sold/db": "workspace:*",
+    "ioredis": "^6.0.0",
+    "next": "^16.3.7",
+    "prom-client": "^15.1.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@sold/config": "workspace:*",
+    "@sold/testing": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "vitest": "^5.0.3"
+  }
+}
