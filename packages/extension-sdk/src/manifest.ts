@@ -297,7 +297,12 @@ const shapeSchema = z.object({
     .optional(),
 });
 
-const KNOWN_EVENTS = new Set<string>(['cart.updated', 'order.placed', 'payment.captured']);
+const KNOWN_EVENTS = new Set<string>([
+  'cart.updated',
+  'order.placed',
+  'payment.captured',
+  'order.status_changed',
+]);
 const KNOWN_HOOKS = new Set<string>(['cart.item.adding', 'checkout.placing']);
 const KNOWN_SLOTS = new Set<string>([
   'storefront.header.end',

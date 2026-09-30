@@ -23,6 +23,15 @@ export interface EventMap {
     placedAt: Date;
   };
   'payment.captured': { paymentId: string; orderId: string; amount: MoneyValue; gateway: string };
+  /** Every order state change (paid, shipped, cancelled, refunded, ...). */
+  'order.status_changed': {
+    orderId: string;
+    from: string;
+    to: string;
+    actor: string;
+    /** True when payment landed but the stock could not be re-secured: needs a human. */
+    stockShortfall: boolean;
+  };
 }
 
 export type EventName = keyof EventMap;

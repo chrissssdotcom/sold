@@ -8,5 +8,5 @@ happen in a major version. Below 1.0.0, minor versions may make breaking changes
 Initial API: `defineExtension`, `defineBlock`, `defineJob`; observers, interceptors (with the hot-path contract), settings,
 permissions, routes, pages, admin screens, blocks, slots, services, jobs and schedules, reporting views, lifecycle hooks;
 re-exports of `zod` and Drizzle's Postgres helpers so extensions share Base's single instances.
-Events: `cart.updated`, `order.placed`, `payment.captured`. Hooks: `cart.item.adding`, `checkout.placing`.
+Events: `cart.updated`, `order.placed`, `payment.captured`, `order.status_changed`. Hooks: `cart.item.adding`, `checkout.placing`.
 Services: `pricing.rounding`.
