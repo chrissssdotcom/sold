@@ -1,0 +1,22 @@
+{
+  "name": "@sold/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@sold/db": "workspace:*",
+    "@testcontainers/postgresql": "^12.2.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@sold/config": "workspace:*",
+    "@types/pg": "^8.23.1"
+  }
+}

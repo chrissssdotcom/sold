@@ -6,7 +6,7 @@ export default [
   { ...coreFrameworkFree, files: ['packages/core/**/*.{ts,tsx}'] },
   // Scripts/config files may use console
   {
-    files: ['**/scripts/**', '**/*.config.{js,ts}', 'packages/cli/**'],
+    files: ['**/scripts/**', '**/cli/**', '**/*.config.{js,ts}', 'packages/cli/**'],
     rules: { 'no-console': 'off' },
   },
 ];
