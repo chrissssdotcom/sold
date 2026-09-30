@@ -17,6 +17,23 @@ env:
   NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
+  commits:
+    name: Conventional Commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
+
   verify:
     name: Typecheck, lint, unit, build
     runs-on: ubuntu-latest
