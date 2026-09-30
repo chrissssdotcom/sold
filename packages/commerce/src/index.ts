@@ -12,3 +12,6 @@ export * from './outbox-relay';
 export * from './pricing';
 export * from './tax';
 export * from './shipping';
+export * from './promotions';
+export * from './checkout';
+export * from './commerce';

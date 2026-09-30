@@ -27,6 +27,26 @@ export interface IdempotentResult<T> {
   replayed: boolean;
 }
 
+/** Read-only replay check: the stored response for a completed (scope, key), null if none. Refuses key reuse. */
+export async function lookupIdempotent<T>(
+  db: DbOrTx,
+  scope: string,
+  key: string,
+  request: unknown,
+): Promise<T | null> {
+  const row = (
+    await db.execute<{ request_hash: string; status: string; response: JsonSafe }>(sql`
+      SELECT request_hash, status, response FROM idempotency_keys WHERE scope = ${scope} AND key = ${key}`)
+  ).rows[0];
+  if (!row || row.status !== 'completed') return null;
+  if (row.request_hash !== hashRequest(request))
+    throw new ConflictError(
+      'idempotency_key_reuse',
+      'This idempotency key was already used with a different request',
+    );
+  return fromJsonSafe<T>(row.response);
+}
+
 /**
  * Exactly-once execution of `fn` per (scope, key), atomically with its own writes.
  *
