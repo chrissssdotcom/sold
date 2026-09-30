@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
+  signOrderToken,
+  verifyOrderToken,
   cartCookie,
   deriveCartKey,
   readCartCookie,
@@ -36,6 +38,13 @@ describe('cart token', () => {
       undefined,
     ])
       expect(verifyCartToken(key, junk as string | null)).toBeNull();
+  });
+
+  it('order tokens round-trip and are not interchangeable with cart tokens', () => {
+    const id = randomUUID();
+    expect(verifyOrderToken(key, signOrderToken(key, id))).toBe(id);
+    expect(verifyOrderToken(key, signCartToken(key, id))).toBeNull();
+    expect(verifyCartToken(key, signOrderToken(key, id))).toBeNull();
   });
 
   it('the bare cart id is not a credential', () => {

@@ -6,6 +6,8 @@ import { getCommerceMetrics } from '../../../server/commerce-metrics';
 import { route } from '../../../server/route';
 import { getRuntime } from '../../../server/runtime';
 import { PRIVATE, requireCartId } from '../../../server/storefront';
+import { signOrderToken } from '../../../server/cart-token';
+import { cartKey } from '../../../server/commerce';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +48,7 @@ export const POST = route(async (request) => {
           total: order.total.toJSON(),
           payBy: order.payBy,
         },
+        orderToken: signOrderToken(cartKey(), order.orderId),
         replayed,
       },
       { status: replayed ? 200 : 201, headers: PRIVATE },

@@ -72,6 +72,9 @@ importers:
       '@sold/commerce':
         specifier: workspace:*
         version: link:../../packages/commerce
+      '@sold/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@sold/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -84,6 +87,9 @@ importers:
       '@sold/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
+      '@sold/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0

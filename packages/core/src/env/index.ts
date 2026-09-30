@@ -86,6 +86,9 @@ export const envSchema = z
       .default('sold_ext_'),
     /** Bearer token protecting `/metrics`. */
     METRICS_TOKEN: z.string().min(16).optional(),
+    /** Card payments via Stripe. Both must be set to enable the gateway. */
+    STRIPE_SECRET_KEY: z.string().min(8).optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().min(8).optional(),
     OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   })
   .superRefine((env, ctx) => {

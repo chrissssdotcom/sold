@@ -7,6 +7,7 @@ import { createDb, FeatureFlags } from '@sold/db';
 import { PgBossQueue } from '@sold/jobs';
 import { Gauge, Registry, collectDefaultMetrics } from 'prom-client';
 import * as generated from '../.generated/extensions';
+import { startCommerceJobs } from './commerce-jobs';
 import { baseQueues, registerBaseJobs } from './jobs';
 import { bearerMatches } from '../src/server/auth';
 import { installExtensionSafety } from '../src/server/extension-safety';
@@ -118,9 +119,12 @@ const server = createServer((req, res) => {
   })();
 });
 
+const stopRelay = new AbortController();
+
 async function shutdown(signal: string): Promise<void> {
   if (draining) return;
   draining = true;
+  stopRelay.abort();
   log.info({ signal }, 'worker draining: finishing in-flight jobs');
   try {
     await queue.stop({ timeoutMs: 30_000 });
@@ -155,6 +159,14 @@ async function main(): Promise<void> {
     { extensions: kernel.extensions.map((e) => `${e.manifest.name}@${e.manifest.version}`) },
     'extension workers started',
   );
+  await startCommerceJobs({
+    env,
+    db: db.primary,
+    queue,
+    log,
+    publish: (event, payload, o) => kernel.bus.publish(event, payload, o),
+    signal: stopRelay.signal,
+  });
   ready = true;
   log.info('worker ready');
 }

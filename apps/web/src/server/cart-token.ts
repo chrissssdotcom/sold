@@ -56,3 +56,17 @@ export function readCartCookie(header: string | null, secure: boolean): string |
   }
   return null;
 }
+
+/** Order tokens: same construction, different domain string, so a cart token can never be replayed as an order token. */
+export function signOrderToken(key: Buffer, orderId: string): string {
+  return `${orderId}.${createHmac('sha256', key).update(`order:${orderId}`).digest('base64url')}`;
+}
+
+export function verifyOrderToken(key: Buffer, token: string | null | undefined): string | null {
+  if (!token || token.length > 128 || token.indexOf('.') !== 36) return null;
+  const id = token.slice(0, 36);
+  if (!UUID.test(id)) return null;
+  const given = Buffer.from(token.slice(37));
+  const want = Buffer.from(createHmac('sha256', key).update(`order:${id}`).digest('base64url'));
+  return given.length === want.length && timingSafeEqual(given, want) ? id : null;
+}
