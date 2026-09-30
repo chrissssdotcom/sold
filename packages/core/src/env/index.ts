@@ -75,6 +75,18 @@ export const envSchema = z
         });
       }
     }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.SOLD_ENVIRONMENT !== 'local' &&
+      env.SOLD_BUILD_ID === 'dev'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SOLD_BUILD_ID'],
+        message:
+          'SOLD_BUILD_ID must identify the build (git SHA) outside local: builds sharing "dev" would share a cache namespace',
+      });
+    }
     if (env.SOLD_SECRET_KEY && Buffer.from(env.SOLD_SECRET_KEY, 'base64').length !== 32) {
       ctx.addIssue({
         code: 'custom',

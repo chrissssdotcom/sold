@@ -30,7 +30,11 @@ export class FeatureFlags {
       this.cache.set(key, { enabled, expiresAt: this.now() + this.ttlMs });
       return enabled;
     } catch {
-      return cached?.enabled ?? fallback;
+      // Fail static AND negative-cache: while the database is down, do not hammer it once per call. Keep the last
+      // known value (or the fallback) for a short window, then try again.
+      const value = cached?.enabled ?? fallback;
+      this.cache.set(key, { enabled: value, expiresAt: this.now() + Math.min(this.ttlMs, 2_000) });
+      return value;
     }
   }
 }

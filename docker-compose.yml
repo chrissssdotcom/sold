@@ -11,7 +11,8 @@ services:
   postgres:
     image: postgres:16
     environment: *postgres-env
-    ports: ['5432:5432']
+    ports: ['127.0.0.1:5432:5432']
+    stop_grace_period: 30s
     command:
       - postgres
       - -c
@@ -22,7 +23,9 @@ services:
       - max_connections=200
       - -c
       - idle_in_transaction_session_timeout=15000
-    volumes: [postgres-data:/var/lib/postgresql/data]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U sold -d sold']
       interval: 5s
@@ -45,7 +48,7 @@ services:
       DEFAULT_POOL_SIZE: '20'
       MAX_CLIENT_CONN: '2000'
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
-    ports: ['6432:5432']
+    ports: ['127.0.0.1:6432:5432']
 
   # noeviction is wrong for a cache and volatile-lru is right for this mix: cache entries carry TTLs and may be
   # evicted; counters (hot-SKU stock, rate limits) have no TTL, so they are never evicted.
@@ -63,7 +66,7 @@ services:
         '--appendonly',
         'no',
       ]
-    ports: ['6379:6379']
+    ports: ['127.0.0.1:6379:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -72,13 +75,13 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
-    ports: ['1025:1025', '8025:8025']
+    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
 
   minio:
     image: minio/minio:latest
     command: ['server', '/data', '--console-address', ':9001']
     environment: { MINIO_ROOT_USER: sold, MINIO_ROOT_PASSWORD: soldsoldsold }
-    ports: ['9000:9000', '9001:9001']
+    ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
     volumes: [minio-data:/data]
 
   prometheus:
@@ -87,7 +90,7 @@ services:
       - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./ops/prometheus/metrics-token:/etc/prometheus/metrics-token:ro
     extra_hosts: ['host.docker.internal:host-gateway']
-    ports: ['9090:9090']
+    ports: ['127.0.0.1:9090:9090']
 
   grafana:
     image: grafana/grafana:latest
@@ -99,7 +102,7 @@ services:
     volumes:
       - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports: ['3030:3000']
+    ports: ['127.0.0.1:3030:3000']
     depends_on: [prometheus]
 
   # ---- application images (profile: app) ------------------------------------
@@ -113,7 +116,9 @@ services:
       DATABASE_POOLER: pgbouncer
       REDIS_URL: redis://redis:6379
       METRICS_TOKEN: local-metrics-token-1234
-    ports: ['3000:3000']
+    ports: ['127.0.0.1:3000:3000']
+    # Longer than SOLD_DRAIN_SECONDS (10 s) plus in-flight request time: the app drains before it exits.
+    stop_grace_period: 30s
     depends_on:
       pgbouncer: { condition: service_started }
       redis: { condition: service_healthy }
@@ -122,7 +127,9 @@ services:
     profiles: [app]
     build: { context: ., target: worker }
     environment: *app-env
-    ports: ['3001:3001']
+    ports: ['127.0.0.1:3001:3001']
+    # Worker drain waits up to 30 s for in-flight jobs.
+    stop_grace_period: 45s
     depends_on:
       postgres: { condition: service_healthy }
 

@@ -35,7 +35,11 @@ export interface Db {
   replica: ReplicaDb;
   /** True when a distinct replica URL was configured. */
   hasReplica: boolean;
-  pools: { primary: Pool; replica: Pool };
+  /**
+   * `probe` is a dedicated single-connection pool to the primary for health checks, so a readiness probe never
+   * queues behind (or is starved by) request traffic and cannot itself exhaust the application pool.
+   */
+  pools: { primary: Pool; replica: Pool; probe: Pool };
   close(): Promise<void>;
 }
 
@@ -62,6 +66,8 @@ export function createDb(opts: DbOptions): Db {
   const replicaPool = hasReplica
     ? new Pool(poolConfig(opts.replicaUrl as string, opts))
     : primaryPool;
+  const probePool = new Pool({ ...poolConfig(opts.primaryUrl, opts), max: 1, application_name: `${opts.applicationName ?? 'sold'}-probe` });
+  probePool.on('error', () => undefined);
   const drizzleOpts = { schema, ...(opts.logger ? { logger: opts.logger } : {}) };
 
   // An idle client erroring (e.g. failover) must not crash the process.
@@ -72,9 +78,9 @@ export function createDb(opts: DbOptions): Db {
     primary: drizzle(primaryPool, drizzleOpts) as unknown as PrimaryDb,
     replica: drizzle(replicaPool, drizzleOpts) as unknown as ReplicaDb,
     hasReplica,
-    pools: { primary: primaryPool, replica: replicaPool },
+    pools: { primary: primaryPool, replica: replicaPool, probe: probePool },
     async close() {
-      await Promise.all([primaryPool.end(), hasReplica ? replicaPool.end() : Promise.resolve()]);
+      await Promise.all([primaryPool.end(), probePool.end(), hasReplica ? replicaPool.end() : Promise.resolve()]);
     },
   };
 }

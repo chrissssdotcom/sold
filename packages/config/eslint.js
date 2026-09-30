@@ -3,25 +3,25 @@ import tseslint from 'typescript-eslint';
 import globals from 'globals';
 
 /**
- * Modules that extensions must never import (Base internals).
- * Extensions may depend only on `@sold/extension-sdk` (and third-party libs).
+ * Modules that extensions must never import (Base internals). Extensions may depend only on
+ * `@sold/extension-sdk` (and third-party libraries). Every workspace package other than the SDK is off limits,
+ * as is reaching into another package by path.
  */
+export const baseInternalPackages = ['core', 'db', 'ui', 'identity', 'payments', 'testing', 'jobs', 'cli', 'config'];
+
 export const baseInternalPatterns = [
-  '@sold/core',
-  '@sold/core/*',
-  '@sold/db',
-  '@sold/db/*',
-  '@sold/ui',
-  '@sold/ui/*',
-  '@sold/identity',
-  '@sold/identity/*',
-  '@sold/payments',
-  '@sold/payments/*',
-  '@sold/testing',
-  '@sold/testing/*',
-  '**/apps/web/**',
-  '**/packages/*/src/**',
+  ...baseInternalPackages.flatMap((p) => [`@sold/${p}`, `@sold/${p}/*`]),
+  '**/apps/**',
+  '**/packages/**',
+  '**/ops/**',
 ];
+
+const boundaryMessage =
+  'Extensions must depend only on @sold/extension-sdk, never on Base internals. If you need this, add an extension point to Base.';
+
+/** Matches `@sold/<internal>` and `@sold/<internal>/...` in a string literal. */
+const internalRegex = `^@sold\\/(${baseInternalPackages.join('|')})(\\/.*)?$`;
+const pathRegex = '(^|\\/)(apps|packages|ops)\\/';
 
 export const base = tseslint.config(
   {
@@ -51,19 +51,21 @@ export const base = tseslint.config(
   },
 );
 
-/** Extra rules for code under `extensions/`: no Base internals. */
+/** Extra rules for code under `extensions/`: no Base internals (static imports, dynamic import(), require()). */
 export const extensionBoundary = {
-  files: ['**/*.{ts,tsx}'],
+  files: ['**/*.{ts,tsx,js,mjs,cjs}'],
   rules: {
     'no-restricted-imports': [
       'error',
-      {
-        patterns: baseInternalPatterns.map((group) => ({
-          group: [group],
-          message:
-            'Extensions must depend only on @sold/extension-sdk, never on Base internals. If you need this, add an extension point to Base.',
-        })),
-      },
+      { patterns: baseInternalPatterns.map((group) => ({ group: [group], message: boundaryMessage })) },
+    ],
+    'no-restricted-syntax': [
+      'error',
+      ...[internalRegex, pathRegex].flatMap((re) => [
+        { selector: `ImportExpression > Literal[value=/${re}/]`, message: boundaryMessage },
+        { selector: `CallExpression[callee.name='require'] > Literal[value=/${re}/]`, message: boundaryMessage },
+        { selector: `TSImportType > TSLiteralType > Literal[value=/${re}/]`, message: boundaryMessage },
+      ]),
     ],
   },
 };

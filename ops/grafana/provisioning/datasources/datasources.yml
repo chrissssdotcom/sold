@@ -11,7 +11,8 @@ datasources:
     uid: sold-reporting
     type: grafana-postgresql-datasource
     access: proxy
-    url: pgbouncer:6432
+    # Reporting reads go to a replica in deployed environments (Section 8A.4); locally there is only the primary.
+    url: postgres:5432
     user: sold_grafana
     secureJsonData:
       password: ${GRAFANA_DB_PASSWORD}

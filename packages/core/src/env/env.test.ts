@@ -36,8 +36,21 @@ describe('loadEnv', () => {
         SOLD_ENVIRONMENT: 'dev',
         SOLD_SECRET_KEY: key,
         METRICS_TOKEN: 'x'.repeat(16),
+        SOLD_BUILD_ID: 'abc123',
       }),
     ).not.toThrow();
+  });
+
+  it('refuses the default build id outside local in production mode', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: 'production',
+        SOLD_ENVIRONMENT: 'dev',
+        SOLD_SECRET_KEY: key,
+        METRICS_TOKEN: 'x'.repeat(16),
+      }),
+    ).toThrow(/SOLD_BUILD_ID/);
   });
 
   it('rejects a secret key of the wrong length', () => {

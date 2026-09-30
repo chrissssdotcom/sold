@@ -1,19 +1,20 @@
-import { evaluateReadiness } from '@/server/health';
+import { cachedReadiness } from '@/server/health';
 import { getRuntime } from '@/server/runtime';
 import { route } from '@/server/route';
 
 export const dynamic = 'force-dynamic';
 
+let check: ReturnType<typeof cachedReadiness> | undefined;
+
 export const GET = route(async () => {
   const rt = getRuntime();
-  const result = await evaluateReadiness({
+  check ??= cachedReadiness({
     isDraining: () => rt.draining.value,
+    // Dedicated probe connection: never contends with request traffic.
     checkPrimary: async () => {
-      await rt.db.pools.primary.query('SELECT 1');
+      await rt.db.pools.probe.query('SELECT 1');
     },
-    ...(rt.db.hasReplica
-      ? { checkReplica: async () => void (await rt.db.pools.replica.query('SELECT 1')) }
-      : {}),
+    ...(rt.db.hasReplica ? { checkReplica: async () => void (await rt.db.pools.replica.query('SELECT 1')) } : {}),
     ...(rt.redis
       ? {
           checkRedis: async () => {
@@ -23,8 +24,6 @@ export const GET = route(async () => {
         }
       : {}),
   });
-  return Response.json(result, {
-    status: result.status === 'unavailable' ? 503 : 200,
-    headers: { 'cache-control': 'no-store' },
-  });
+  const result = await check();
+  return Response.json(result, { status: result.status === 'unavailable' ? 503 : 200, headers: { 'cache-control': 'no-store' } });
 });

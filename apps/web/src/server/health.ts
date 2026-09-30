@@ -61,3 +61,29 @@ export async function evaluateReadiness(deps: HealthDeps): Promise<{
   if (primary.status === 'down' || draining) status = 'unavailable';
   return { status, draining, checks };
 }
+
+type ReadinessResult = Awaited<ReturnType<typeof evaluateReadiness>>;
+
+/**
+ * Wraps `evaluateReadiness` so a public, unauthenticated endpoint cannot be used to load the database:
+ * dependency checks run at most once per `ttlMs`, concurrent callers share the in-flight check, and a
+ * failure is cached briefly too (so a struggling primary is not hammered by probes). Draining is always
+ * evaluated live, so a SIGTERM takes effect immediately.
+ */
+export function cachedReadiness(deps: HealthDeps, ttlMs = 1_000, now: () => number = Date.now): () => Promise<ReadinessResult> {
+  let cached: { at: number; result: ReadinessResult } | undefined;
+  let inFlight: Promise<ReadinessResult> | undefined;
+  return async () => {
+    if (deps.isDraining()) return evaluateReadiness({ ...deps, checkPrimary: async () => undefined, checkReplica: undefined, checkRedis: undefined });
+    if (cached && now() - cached.at < ttlMs) return cached.result;
+    inFlight ??= evaluateReadiness(deps)
+      .then((result) => {
+        cached = { at: now(), result };
+        return result;
+      })
+      .finally(() => {
+        inFlight = undefined;
+      });
+    return inFlight;
+  };
+}

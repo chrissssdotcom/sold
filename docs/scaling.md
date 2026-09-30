@@ -72,6 +72,26 @@ Profiles are **data**: the source of truth for SKUs and counts is `ops/terraform
 `SOLD_SCALE_MODE=prescale` raises minimum replicas ahead of scheduled events (runbook: `docs/runbooks/sale-readiness.md`,
 PENDING(phase-8)).
 
+## Known limits and gaps (found by independent review; not yet closed)
+
+- **Drain sizing.** `SOLD_DRAIN_SECONDS` (default 10) is how long the web app stays up reporting `503` after SIGTERM so
+  load balancers stop routing. It only works if `probe interval x failure threshold < SOLD_DRAIN_SECONDS`, and the
+  orchestrator's termination grace period must exceed drain + longest in-flight request (compose uses 30 s web, 45 s
+  worker). There is no in-flight request tracking: after the drain window the process exits.
+- **pg-boss idle load.** Each worker polls every declared queue, and `localConcurrency` multiplies pollers. One review
+  measurement showed ~17 transactions/s from a single idle worker with 3 queues (the `critical` class polls every 2 s).
+  Multiply by worker replicas and queues before sizing the primary; this is the first thing to measure in Phase 7.
+- **Next per-route cache-control is per process.** A route not prerendered at build re-renders once on its first hit on
+  each new instance (Next keeps `revalidate` in process memory). Pre-warm (Phase 4) mitigates for hot pages.
+- **Tag stale windows.** `revalidateTag(tag, { expire })` is treated as immediate expiry by the shared cache handler;
+  stale-while-revalidate on tag invalidation is not implemented (Phase 4).
+- **No DB circuit breaker and an unbounded pool wait queue** in `@sold/db`. Under primary loss requests wait on the pool
+  until their own timeouts. Planned for Phase 8 with the dependency-failure scenario.
+- **Very large cache entries** (multi-MB) cost event-loop time to serialise; the store scales its timeout with size but
+  does not compress or stream.
+- **Tag times live in one Redis hash** (`sold:cache:tags`) that is not TTL'd (so `volatile-lru` never evicts it). It needs a
+  periodic cleanup of tags older than the max entry TTL (Phase 4).
+
 ## Degradation ladder
 
 Feature flags seeded by `pnpm db:seed`, all OFF by default, reversible without a deploy. Applied in order under load:

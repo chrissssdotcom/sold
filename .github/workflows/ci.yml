@@ -112,7 +112,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:migrate
-      - run: pnpm db:migrate | tee /dev/stderr | grep -q "0 applied"
+      - name: Second run must be a no-op
+        run: |
+          pnpm db:migrate | tee /dev/stderr | grep -q "migrations: 0 applied"
       - run: pnpm db:seed
 
   loadtest-smoke:
@@ -157,6 +159,34 @@ jobs:
         run: k6 run -e BASE_URL=http://localhost:3000 ops/loadtests/baseline-browse.js
       - if: failure()
         run: tail -n 100 server.log
+
+  # The image has never been built by the agent that wrote the Dockerfile (no Docker daemon there): CI must.
+  docker:
+    name: Build images (web, worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          push: false
+          build-args: |
+            SOLD_BUILD_ID=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          push: false
+          build-args: |
+            SOLD_BUILD_ID=${{ github.sha }}
+          cache-from: type=gha
 
   supply-chain:
     name: Dependency audit and SBOM
