@@ -163,6 +163,14 @@ RBAC + `authorize()`, OIDC, SAML, SCIM, audit log (hash-chained), break-glass, K
 
 Threat model, security review, full k6/chaos suite and capacity report, waiting room and degradation ladder rehearsal, DB failover/restore drills, sale-readiness dry run, N-1 → N upgrade test, customer creation and promotion through the documented flow, final docs.
 
+## Phases 2-4 status (honest)
+
+| Phase | State | Evidence |
+| --- | --- | --- |
+| 2 Commerce core | Built and tested; independent review did not complete (agent rate-limited), so it is **unreviewed** | commerce unit 159, integration 58 (incl. 5,000 buyers/100 units, 300 shoppers/20 units, idempotent checkout) |
+| 3 Payments and multi-currency | Built and tested; Stripe adapter verified only against a local fake, not Stripe | payments unit 30, integration 26 |
+| 4 Storefront and page builder | Storefront, blocks, versioned pages and APIs done; **no admin editor yet** | web unit 72, e2e 4 on a production build, axe 0 violations (docs/storefront.md) |
+
 ## Phase 1 review round 2 (independent adversarial review of the extension framework)
 
 An independent reviewer reproduced critical and high findings against real PostgreSQL. Two fix agents were then cut off
