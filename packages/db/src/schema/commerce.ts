@@ -239,3 +239,71 @@ export const promotionRedemptions = pgTable(
   },
   (t) => [index('promotion_redemptions_order_idx').on(t.orderId)],
 );
+
+export const payments = pgTable(
+  'payments',
+  {
+    id: id(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'restrict' }),
+    gateway: text('gateway').notNull(),
+    gatewayRef: text('gateway_ref'),
+    status: text('status').notNull().default('pending'),
+    currency: char('currency', { length: 3 }).notNull(),
+    amount: minor('amount').notNull(),
+    captured: minor('captured').notNull().default(0n),
+    refunded: minor('refunded').notNull().default(0n),
+    failureCode: text('failure_code'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('payments_order_idx').on(t.orderId)],
+);
+
+export const paymentEvents = pgTable(
+  'payment_events',
+  {
+    gateway: text('gateway').notNull(),
+    eventId: text('event_id').notNull(),
+    type: text('type').notNull(),
+    payload: jsonb('payload').notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    error: text('error'),
+  },
+  (t) => [primaryKey({ columns: [t.gateway, t.eventId] })],
+);
+
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: id(),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payments.id, { onDelete: 'restrict' }),
+    amount: minor('amount').notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    status: text('status').notNull().default('pending'),
+    gatewayRef: text('gateway_ref'),
+    reason: text('reason').notNull().default(''),
+    actor: text('actor').notNull(),
+    idempotencyKey: text('idempotency_key').notNull().unique('refunds_idempotency_key_key'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('refunds_payment_idx').on(t.paymentId)],
+);
+
+export const fxRates = pgTable(
+  'fx_rates',
+  {
+    base: char('base', { length: 3 }).notNull(),
+    quote: char('quote', { length: 3 }).notNull(),
+    rateNum: minor('rate_num').notNull(),
+    rateDen: minor('rate_den').notNull(),
+    source: text('source').notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.base, t.quote, t.fetchedAt] })],
+);
