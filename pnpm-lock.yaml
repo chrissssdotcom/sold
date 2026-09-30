@@ -189,6 +189,9 @@ importers:
       '@sold/db':
         specifier: workspace:*
         version: link:../db
+      '@sold/extension-sdk':
+        specifier: workspace:*
+        version: link:../extension-sdk
       zod:
         specifier: ^4.6.5
         version: 4.6.5
