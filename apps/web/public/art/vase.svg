@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-hidden="true">
+
+  <defs>
+    <radialGradient id="bg-vase" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#e9eef1"/><stop offset="1" stop-color="#c9d6dc"/></radialGradient>
+    <linearGradient id="floor-vase" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".0"/></linearGradient>
+    <filter id="blur-vase" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="soft-vase" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+<rect width="800" height="1000" fill="url(#bg-vase)"/>
+<rect y="800" width="800" height="200" fill="url(#floor-vase)"/>
+<circle cx="640" cy="200" r="190" fill="#fff" opacity=".28" filter="url(#soft-vase)"/>
+
+      <ellipse cx="400" cy="812" rx="150" ry="18" fill="#3b2a1e" opacity=".28" filter="url(#blur-vase)"/>
+      <defs><linearGradient id="ceramic-vase" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7f9b96"/><stop offset="1" stop-color="#4f6b68"/></linearGradient></defs>
+      <g stroke="#6b7a55" stroke-width="7" fill="none" stroke-linecap="round">
+        <path d="M400 520 q-10 -180 -110 -270"/><path d="M400 520 q20 -220 40 -330"/><path d="M400 520 q60 -150 160 -200"/></g>
+      <g fill="#8a9a6a"><ellipse cx="300" cy="280" rx="20" ry="46" transform="rotate(-30 300 280)"/>
+        <ellipse cx="438" cy="210" rx="18" ry="44" transform="rotate(8 438 210)"/>
+        <ellipse cx="548" cy="330" rx="20" ry="44" transform="rotate(55 548 330)"/></g>
+      <circle cx="288" cy="250" r="26" fill="#e8b4a0"/><circle cx="440" cy="186" r="24" fill="#f0d08a"/><circle cx="562" cy="306" r="26" fill="#e8b4a0"/>
+      <path d="M350 500 h100 q0 40 70 120 q60 80 -10 160 q-20 30 -110 30 q-90 0 -110 -30 q-70 -80 -10 -160 q70 -80 70 -120z" fill="url(#ceramic-vase)"/>
+      <path d="M352 560 q-40 60 -60 120" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".25" fill="none"/>
+      <ellipse cx="400" cy="500" rx="50" ry="10" fill="#33504d"/>
+</svg>

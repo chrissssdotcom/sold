@@ -18,9 +18,13 @@
     "sync": "tsx scripts/sync-extensions.ts",
     "pretypecheck": "pnpm sync",
     "pretest": "pnpm sync",
-    "preworker": "pnpm sync"
+    "preworker": "pnpm sync",
+    "seed:demo": "dotenv -e ../../.env -- tsx scripts/seed-demo.ts",
+    "test:e2e": "vitest run --project e2e"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
@@ -41,12 +45,14 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@sold/config": "workspace:*",
     "@sold/testing": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0",
     "tsx": "^4.23.15",
     "vitest": "^5.0.3"
   }

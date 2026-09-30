@@ -250,6 +250,113 @@ export class CatalogService {
     };
   }
 
+  /** Stock for display (PDP, listings): one query for any number of variants. `available` is null when backorderable. */
+  async availability(
+    db: PrimaryDb | ReplicaDb,
+    variantIds: readonly string[],
+  ): Promise<Map<string, { available: number | null }>> {
+    if (variantIds.length === 0) return new Map();
+    const rows = await db
+      .select({
+        variantId: inventoryLevels.variantId,
+        onHand: inventoryLevels.onHand,
+        reserved: inventoryLevels.reserved,
+        backorder: inventoryLevels.allowBackorder,
+      })
+      .from(inventoryLevels)
+      .where(inArray(inventoryLevels.variantId, [...variantIds]));
+    return new Map(
+      rows.map((r) => [
+        r.variantId,
+        { available: r.backorder ? null : Math.max(r.onHand - r.reserved, 0) },
+      ]),
+    );
+  }
+
+  /** Active products with their variants and prices for a set of handles, in the order given: 3 queries total. */
+  async getActiveByHandles(
+    db: PrimaryDb | ReplicaDb,
+    handles: readonly string[],
+  ): Promise<CatalogProduct[]> {
+    if (handles.length === 0) return [];
+    const rows = await db
+      .select()
+      .from(products)
+      .where(and(inArray(products.handle, [...handles]), eq(products.status, 'active')));
+    return this.hydrate(db, rows, handles);
+  }
+
+  /** Newest active products (home page, listings) with variants and prices: 3 queries total. */
+  async listActiveDetailed(db: PrimaryDb | ReplicaDb, limit = 24): Promise<CatalogProduct[]> {
+    const rows = await db
+      .select()
+      .from(products)
+      .where(eq(products.status, 'active'))
+      .orderBy(desc(products.createdAt), desc(products.id))
+      .limit(Math.min(limit, 100));
+    return this.hydrate(db, rows);
+  }
+
+  private async hydrate(
+    db: PrimaryDb | ReplicaDb,
+    rows: (typeof products.$inferSelect)[],
+    order?: readonly string[],
+  ): Promise<CatalogProduct[]> {
+    if (rows.length === 0) return [];
+    const variants = await db
+      .select()
+      .from(productVariants)
+      .where(
+        and(
+          inArray(
+            productVariants.productId,
+            rows.map((r) => r.id),
+          ),
+          eq(productVariants.status, 'active'),
+        ),
+      )
+      .orderBy(asc(productVariants.position));
+    const prices = variants.length
+      ? await db
+          .select()
+          .from(variantPrices)
+          .where(
+            inArray(
+              variantPrices.variantId,
+              variants.map((v) => v.id),
+            ),
+          )
+      : [];
+    const list = rows.map((p) => ({
+      id: p.id,
+      handle: p.handle,
+      title: p.title,
+      description: p.description,
+      status: p.status,
+      tags: p.tags,
+      attributes: p.attributes as Record<string, unknown>,
+      variants: variants
+        .filter((v) => v.productId === p.id)
+        .map((v) => ({
+          id: v.id,
+          sku: v.sku,
+          title: v.title,
+          options: v.options as Record<string, string>,
+          weightGrams: v.weightGrams,
+          prices: prices
+            .filter((x) => x.variantId === v.id)
+            .map((x) => ({
+              currency: x.currency,
+              amount: Money.of(x.amount, x.currency),
+              compareAt: x.compareAt === null ? null : Money.of(x.compareAt, x.currency),
+            })),
+        })),
+    }));
+    if (!order) return list;
+    const pos = new Map(order.map((h, i) => [h, i]));
+    return list.sort((a, b) => (pos.get(a.handle) ?? 0) - (pos.get(b.handle) ?? 0));
+  }
+
   /** Keyset pagination (never OFFSET): stable under inserts and O(page) at any depth, using products_active_created_idx. */
   async listActive(
     db: ReplicaDb | PrimaryDb,

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-hidden="true">
+
+  <defs>
+    <radialGradient id="bg-mug" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#f8ece0"/><stop offset="1" stop-color="#ecd3bd"/></radialGradient>
+    <linearGradient id="floor-mug" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".0"/></linearGradient>
+    <filter id="blur-mug" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="soft-mug" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+<rect width="800" height="1000" fill="url(#bg-mug)"/>
+<rect y="800" width="800" height="200" fill="url(#floor-mug)"/>
+<circle cx="640" cy="200" r="190" fill="#fff" opacity=".28" filter="url(#soft-mug)"/>
+
+      <ellipse cx="400" cy="812" rx="190" ry="22.8" fill="#3b2a1e" opacity=".28" filter="url(#blur-mug)"/>
+      <defs><linearGradient id="body-mug" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f4efe8"/><stop offset="1" stop-color="#d9cdbd"/></linearGradient><linearGradient id="glaze-mug" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8683c"/><stop offset="1" stop-color="#9c4322"/></linearGradient></defs>
+      <path d="M520 560 q110 0 110 100 q0 100 -110 100" fill="none" stroke="#cfc2b0" stroke-width="44" stroke-linecap="round"/>
+      <path d="M520 560 q110 0 110 100 q0 100 -110 100" fill="none" stroke="#f4efe8" stroke-width="30" stroke-linecap="round" opacity=".7"/>
+      <rect x="250" y="470" width="290" height="340" rx="44" fill="url(#body-mug)"/>
+      <path d="M250 640 h290 v126 q0 44 -44 44 h-202 q-44 0 -44 -44z" fill="url(#glaze-mug)" opacity=".95"/>
+      <path d="M250 640 q145 34 290 0" fill="none" stroke="#fff" stroke-width="3" opacity=".35"/>
+      <ellipse cx="395" cy="472" rx="145" ry="28" fill="#e7dccd"/>
+      <ellipse cx="395" cy="476" rx="126" ry="20" fill="#5b3a26"/>
+      <rect x="282" y="500" width="22" height="240" rx="11" fill="#fff" opacity=".35"/>
+</svg>

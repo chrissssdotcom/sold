@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-hidden="true">
+
+  <defs>
+    <radialGradient id="bg-bottle" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#e7eef0"/><stop offset="1" stop-color="#bccbd0"/></radialGradient>
+    <linearGradient id="floor-bottle" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".0"/></linearGradient>
+    <filter id="blur-bottle" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="soft-bottle" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+<rect width="800" height="1000" fill="url(#bg-bottle)"/>
+<rect y="800" width="800" height="200" fill="url(#floor-bottle)"/>
+<circle cx="640" cy="200" r="190" fill="#fff" opacity=".28" filter="url(#soft-bottle)"/>
+
+      <ellipse cx="400" cy="812" rx="130" ry="15.6" fill="#3b2a1e" opacity=".28" filter="url(#blur-bottle)"/>
+      <defs><linearGradient id="steel-bottle" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#dde6e8"/><stop offset="1" stop-color="#8fa3a8"/></linearGradient><linearGradient id="cap-bottle" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#c8683c"/><stop offset="1" stop-color="#9c4322"/></linearGradient></defs>
+      <rect x="360" y="250" width="80" height="70" rx="14" fill="url(#cap-bottle)"/>
+      <rect x="348" y="312" width="104" height="40" rx="10" fill="#33413f"/>
+      <path d="M352 350 h96 q22 40 22 100 v320 q0 40 -40 40 h-60 q-40 0 -40 -40 v-320 q0 -60 22 -100z" fill="url(#steel-bottle)"/>
+      <rect x="376" y="420" width="18" height="340" rx="9" fill="#fff" opacity=".5"/>
+      <rect x="330" y="560" width="140" height="100" rx="6" fill="#33413f" opacity=".92"/>
+      <text x="400" y="622" text-anchor="middle" font-family="Georgia, serif" font-size="30" fill="#e8f0ee" letter-spacing="6">TRAIL</text>
+</svg>

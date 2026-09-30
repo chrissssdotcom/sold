@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-hidden="true">
+
+  <defs>
+    <radialGradient id="bg-plant" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#eaf0e3"/><stop offset="1" stop-color="#c5d4b5"/></radialGradient>
+    <linearGradient id="floor-plant" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".0"/></linearGradient>
+    <filter id="blur-plant" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="soft-plant" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+<rect width="800" height="1000" fill="url(#bg-plant)"/>
+<rect y="800" width="800" height="200" fill="url(#floor-plant)"/>
+<circle cx="640" cy="200" r="190" fill="#fff" opacity=".28" filter="url(#soft-plant)"/>
+
+      <ellipse cx="400" cy="812" rx="170" ry="20.4" fill="#3b2a1e" opacity=".28" filter="url(#blur-plant)"/>
+      <defs><linearGradient id="clay-plant" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d98458"/><stop offset="1" stop-color="#b15a33"/></linearGradient><linearGradient id="leaf-plant" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4f7a4a"/><stop offset="1" stop-color="#2f5a35"/></linearGradient></defs>
+      <g fill="url(#leaf-plant)">
+        <ellipse cx="400" cy="340" rx="44" ry="150" />
+        <ellipse cx="290" cy="420" rx="40" ry="130" transform="rotate(-38 290 420)"/>
+        <ellipse cx="510" cy="420" rx="40" ry="130" transform="rotate(38 510 420)"/>
+        <ellipse cx="230" cy="540" rx="34" ry="110" transform="rotate(-65 230 540)"/>
+        <ellipse cx="570" cy="540" rx="34" ry="110" transform="rotate(65 570 540)"/></g>
+      <path d="M400 200 v260 M300 340 l70 120 M500 340 l-70 120" stroke="#2f5a35" stroke-width="4" fill="none" opacity=".5"/>
+      <path d="M290 590 h220 l-26 220 q-2 12 -14 12 h-140 q-12 0 -14 -12z" fill="url(#clay-plant)"/>
+      <rect x="276" y="572" width="248" height="42" rx="12" fill="#c46c40"/>
+      <path d="M300 620 l10 180" stroke="#fff" stroke-width="10" opacity=".18" stroke-linecap="round"/>
+</svg>

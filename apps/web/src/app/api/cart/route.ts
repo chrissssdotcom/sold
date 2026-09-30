@@ -17,7 +17,10 @@ export const GET = route(async (request) => {
     const { carts, quotes } = await getCommerce();
     const { db } = getRuntime();
     const cart = await carts.get(db.primary, cartId);
-    if (cart.lines.length === 0) return json({ cart, estimate: null }, { headers: PRIVATE });
+    // A cart that became an order is history: the shopper starts a fresh bag.
+    if (cart.status !== 'open') return json({ cart: null }, { headers: PRIVATE });
+    if (cart.lines.length === 0)
+      return json({ cart, items: [], estimate: null }, { headers: PRIVATE });
     const quote = await quotes.quote(db.primary, {
       cartId,
       destination: { line1: '-', city: '-', region: '', postalCode: '-', country: 'ZZ' },
@@ -25,9 +28,22 @@ export const GET = route(async (request) => {
     return json(
       {
         cart,
+        items: quote.lines.map((l) => {
+          const priced = quote.pricing.lines.find((p) => p.lineId === l.lineId);
+          return {
+            variantId: l.variantId,
+            handle: l.handle,
+            title: l.title,
+            sku: l.sku,
+            image: l.image,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice.toJSON(),
+            lineTotal: (priced?.net ?? l.unitPrice.times(l.quantity)).toJSON(),
+            discount: (priced?.discount ?? l.unitPrice.times(0)).toJSON(),
+          };
+        }),
         estimate: {
           currency: quote.currency,
-          lines: quote.pricing.lines,
           discounts: quote.pricing.discounts.map((d) => ({
             name: d.name,
             code: d.code,

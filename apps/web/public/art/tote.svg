@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-hidden="true">
+
+  <defs>
+    <radialGradient id="bg-tote" cx="50%" cy="38%" r="75%"><stop offset="0" stop-color="#eef0e6"/><stop offset="1" stop-color="#d3d9c3"/></radialGradient>
+    <linearGradient id="floor-tote" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".0"/></linearGradient>
+    <filter id="blur-tote" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="soft-tote" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+<rect width="800" height="1000" fill="url(#bg-tote)"/>
+<rect y="800" width="800" height="200" fill="url(#floor-tote)"/>
+<circle cx="640" cy="200" r="190" fill="#fff" opacity=".28" filter="url(#soft-tote)"/>
+
+      <ellipse cx="400" cy="822" rx="200" ry="24" fill="#3b2a1e" opacity=".28" filter="url(#blur-tote)"/>
+      <defs><linearGradient id="cloth-tote" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#efe6d4"/><stop offset="1" stop-color="#d8ccb3"/></linearGradient></defs>
+      <path d="M300 470 q-20 -190 100 -190 q120 0 100 190" fill="none" stroke="#b9a98a" stroke-width="26" stroke-linecap="round"/>
+      <path d="M232 450 h336 l26 360 h-388z" fill="url(#cloth-tote)"/>
+      <path d="M232 450 h336" stroke="#c9bb9d" stroke-width="6"/>
+      <path d="M248 480 h304" stroke="#bfae8c" stroke-width="3" stroke-dasharray="10 9"/>
+      <rect x="326" y="590" width="148" height="104" rx="8" fill="#3f5a48"/>
+      <path d="M352 654 q24 -44 48 0 q24 -44 48 0" fill="none" stroke="#e9dfc8" stroke-width="7" stroke-linecap="round"/>
+      <path d="M232 450 l-0 0 l26 360" stroke="#fff" stroke-width="3" opacity=".3"/>
+</svg>

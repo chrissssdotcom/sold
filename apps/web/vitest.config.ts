@@ -13,6 +13,15 @@ export default defineConfig({
           fileParallelism: false,
         },
       },
+      {
+        test: {
+          name: 'e2e',
+          include: ['e2e/**/*.e2e.ts'],
+          testTimeout: 120_000,
+          hookTimeout: 60_000,
+          fileParallelism: false,
+        },
+      },
     ],
   },
 });

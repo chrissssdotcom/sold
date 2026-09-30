@@ -1,9 +1,32 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { localeSlugs, negotiateMarket, reservedPrefixes } from './storefront/lib/i18n';
 
 const SAFE_ID = /^[A-Za-z0-9._-]{8,128}$/;
 
 /** Assign/propagate a request ID before anything else runs. Kept deliberately tiny: it runs on every request. */
+/** `/products` -> `/en-au/products`: storefront pages always live under a market prefix. */
+function localeRedirect(request: NextRequest): NextResponse | null {
+  const { pathname, search } = request.nextUrl;
+  const first = pathname.split('/')[1] ?? '';
+  if (
+    localeSlugs.includes(first) ||
+    reservedPrefixes.includes(first) ||
+    /\.[a-z0-9]+$/i.test(pathname)
+  )
+    return null;
+  if (!['GET', 'HEAD'].includes(request.method)) return null;
+  const market = negotiateMarket(request.headers.get('accept-language'));
+  const url = request.nextUrl.clone();
+  url.pathname = `/${market.slug}${pathname === '/' ? '' : pathname}`;
+  url.search = search;
+  const res = NextResponse.redirect(url, 307);
+  res.headers.set('Vary', 'Accept-Language');
+  return res;
+}
+
 export function proxy(request: NextRequest) {
+  const redirect = localeRedirect(request);
+  if (redirect) return redirect;
   const inbound = request.headers.get('x-request-id');
   const requestId = inbound && SAFE_ID.test(inbound) ? inbound : crypto.randomUUID();
   const headers = new Headers(request.headers);

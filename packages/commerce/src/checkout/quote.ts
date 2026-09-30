@@ -14,6 +14,9 @@ const { cartLines, productVariants, products, variantPrices } = schema;
 
 export interface QuoteLine extends PricingLine {
   cartLineId: string;
+  /** Storefront display data, carried so a cart can be rendered from one quote without further queries. */
+  handle: string;
+  image: string | null;
 }
 
 export interface Quote {
@@ -155,6 +158,7 @@ export class QuoteService {
         variantTitle: productVariants.title,
         weightGrams: productVariants.weightGrams,
         productId: products.id,
+        productHandle: products.handle,
         productTitle: products.title,
         tags: products.tags,
         attributes: products.attributes,
@@ -190,6 +194,8 @@ export class QuoteService {
       const taxCategory = (row.attributes as { taxCategory?: unknown }).taxCategory;
       return {
         cartLineId: line.id,
+        handle: row.productHandle,
+        image: firstImage((row.attributes as { images?: unknown }).images),
         lineId: line.id,
         variantId: line.variantId,
         sku: row.sku,
@@ -203,4 +209,8 @@ export class QuoteService {
       };
     });
   }
+}
+
+function firstImage(images: unknown): string | null {
+  return Array.isArray(images) && typeof images[0] === 'string' ? images[0] : null;
 }
