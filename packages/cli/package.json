@@ -1,0 +1,29 @@
+{
+  "name": "@sold/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The `sold` CLI: environments, releases, upgrades and instance scaffolding",
+  "bin": {
+    "sold": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "schemas": "tsx src/gen-schemas.ts"
+  },
+  "dependencies": {
+    "@sold/core": "workspace:*",
+    "commander": "^15.0.0",
+    "semver": "^7.8.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sold/config": "workspace:*",
+    "@types/semver": "^7.8.0"
+  }
+}
