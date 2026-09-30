@@ -67,6 +67,11 @@ export const soldConfigSchema = z
         message: 'The default locale must be included in locales.enabled',
         path: ['enabled'],
       }),
+    /**
+     * Which provider is active for a service when several are registered, e.g.
+     * `{ 'pricing.rounding': 'charm-pricing' }`. Overrides precedence; required when two providers tie.
+     */
+    services: z.record(z.string(), z.string()).default({}),
     /** Extension package names, in the order they should be considered (load order is still dependency-sorted). */
     extensions: z.array(extensionEntrySchema).default([]),
     gateways: z

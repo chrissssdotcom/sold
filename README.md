@@ -7,8 +7,8 @@ extensions kept in `extensions/` and `sold.config.ts`, so Base upgrades never co
 Read [`AGENTS.md`](AGENTS.md) first (principles, commands, conventions), then
 [`docs/adr/`](docs/adr) and [`docs/PROGRESS.md`](docs/PROGRESS.md) for what exists and what does not.
 
-> **Status: Phase 0 (foundations).** The storefront, checkout, payments and extension framework are not built yet.
-> See `docs/PROGRESS.md` for an honest account of what is implemented, verified and pending.
+> **Status: Phase 0 (foundations) and Phase 1 (extension framework) are built.** The storefront, checkout, payments,
+> identity and the rest are not. See `docs/PROGRESS.md` for an honest account of what is implemented, verified and pending.
 
 ## Quickstart
 
@@ -17,7 +17,7 @@ corepack enable
 pnpm install
 cp .env.example .env
 docker compose up -d           # Postgres, PgBouncer, Redis, Mailpit, MinIO, Prometheus, Grafana
-pnpm db:migrate && pnpm db:seed
+pnpm db:migrate && pnpm db:seed   # base migrations, then extension migrations and lifecycle
 pnpm dev                       # web on http://localhost:3000 (Grafana on :3030, Mailpit on :8025)
 ```
 
@@ -51,7 +51,18 @@ Without Docker, point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at any Postgre
 - `packages/core`: domain logic, config, env, resilience, job interfaces (no framework imports).
 - `packages/db`: Drizzle schema, online-safe migration runner and linter, feature flags.
 - `packages/jobs`: pg-boss `JobQueue` adapter.
-- `extensions/*`: first-party and customer extensions (SDK arrives in Phase 1).
+- `packages/extension-sdk`: the public extension API. `extensions/*`: first-party and customer extensions.
 - `ops/`: Terraform, Grafana, Prometheus, k6.
 
-Adding a feature in 30 minutes (the extension walkthrough) arrives with the SDK in Phase 1.
+## Add a feature in 30 minutes
+
+```bash
+pnpm sold ext:new gift-wrap --title "Offer gift wrapping"
+pnpm install
+# add 'gift-wrap' to `extensions` in sold.config.ts
+pnpm db:migrate && pnpm dev
+```
+
+[`docs/extending.md`](docs/extending.md) builds a real loyalty-points feature step by step: its own tables, settings, an
+observer, a cart interceptor, an overridable service, an API route and a scheduled job. Every snippet in it is checked
+against the working, tested extension in `extensions/loyalty-points`.

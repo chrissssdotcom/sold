@@ -24,6 +24,10 @@ export const envSchema = z
     SOLD_BUILD_ID: z.string().default('dev'),
     /** Seconds to keep serving (readiness=false) after SIGTERM so load balancers can drain. */
     SOLD_DRAIN_SECONDS: z.coerce.number().int().min(0).max(120).default(10),
+    /** Hard ceiling for one extension route handler (`/x/<ext>/...`). */
+    SOLD_EXTENSION_ROUTE_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(10_000),
+    /** Largest request body an extension route will accept (by Content-Length). */
+    SOLD_EXTENSION_MAX_BODY_BYTES: z.coerce.number().int().min(1_024).default(1_048_576),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),

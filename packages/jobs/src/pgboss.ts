@@ -21,6 +21,11 @@ export interface PgBossQueueOptions {
   poolMax?: number;
   pollingIntervalSeconds?: number;
   /**
+   * `producer` only enqueues (web): no maintenance/supervision and no scheduler, so N web replicas do not each run
+   * pg-boss housekeeping. `worker` (default) does everything.
+   */
+  role?: 'producer' | 'worker';
+  /**
    * Session settings for the queue's own connections. The database-wide defaults (5 s statement timeout) are sized
    * for request-path queries and would kill pg-boss maintenance on a large backlog, so the queue overrides them.
    */
@@ -43,7 +48,8 @@ export class PgBossQueue implements JobQueue {
       connectionString: opts.connectionString,
       schema: this.schema,
       max: opts.poolMax ?? 5,
-      application_name: 'sold-queue',
+      application_name: opts.role === 'producer' ? 'sold-queue-producer' : 'sold-queue',
+      ...(opts.role === 'producer' ? { supervise: false, schedule: false } : {}),
       options:
         opts.sessionOptions ??
         '-c statement_timeout=60000 -c lock_timeout=10000 -c idle_in_transaction_session_timeout=60000',

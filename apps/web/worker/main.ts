@@ -1,10 +1,12 @@
 import { createServer } from 'node:http';
 import { loadEnv } from '@sold/core/env';
+import { createKernel, toKernelLogger, type GeneratedRegistry } from '@sold/core/extensions';
 import { queueClassPolicies } from '@sold/core/jobs';
 import { createLogger } from '@sold/core/observability';
 import { createDb, FeatureFlags } from '@sold/db';
 import { PgBossQueue } from '@sold/jobs';
 import { Gauge, Registry, collectDefaultMetrics } from 'prom-client';
+import * as generated from '../.generated/extensions';
 import { baseQueues, registerBaseJobs } from './jobs';
 import { bearerMatches } from '../src/server/auth';
 
@@ -128,6 +130,22 @@ async function main(): Promise<void> {
   server.listen(port, '0.0.0.0', () => log.info({ port }, 'worker probes listening'));
   await queue.start();
   await registerBaseJobs(queue, { db: db.primary, flags, log });
+
+  // Extensions: same kernel as the web app, but this process CONSUMES observer deliveries, jobs and schedules.
+  const kernel = createKernel({
+    env,
+    log: toKernelLogger(log),
+    db,
+    queue,
+    registry: generated as unknown as GeneratedRegistry,
+  });
+  await kernel.verifyMigrations(); // migrations are a release-pipeline step, never run by a serving process
+  await kernel.warm();
+  await kernel.startWorkers();
+  log.info(
+    { extensions: kernel.extensions.map((e) => `${e.manifest.name}@${e.manifest.version}`) },
+    'extension workers started',
+  );
   ready = true;
   log.info('worker ready');
 }

@@ -1,7 +1,7 @@
 {
-  "name": "@sold-ext/loyalty-points",
-  "version": "1.0.0",
-  "description": "Worked example: award loyalty points on orders. Exercises every extension contribution type.",
+  "name": "@sold-ext/__NAME__",
+  "version": "0.1.0",
+  "description": "__TITLE__",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
     "@sold/extension-sdk": "workspace:*"
@@ -23,7 +23,7 @@
   },
   "sold": {
     "requires": {
-      "base": "^0.1.0"
+      "base": "__BASE_RANGE__"
     }
   }
 }

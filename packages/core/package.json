@@ -12,7 +12,8 @@
     "./traffic": "./src/traffic.ts",
     "./jobs": "./src/jobs/queue.ts",
     "./extensions": "./src/extensions/index.ts",
-    "./crypto": "./src/crypto/envelope.ts"
+    "./crypto": "./src/crypto/envelope.ts",
+    "./extensions/discovery": "./src/extensions/discovery.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

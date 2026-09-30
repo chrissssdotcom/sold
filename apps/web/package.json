@@ -10,11 +10,15 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --project unit",
-    "predev": "node scripts/build.mjs",
-    "prebuild": "node scripts/build.mjs",
+    "predev": "pnpm sync && node scripts/build.mjs",
+    "prebuild": "pnpm sync && node scripts/build.mjs",
     "test:integration": "vitest run --project integration",
     "worker": "node scripts/build.mjs && dotenv -e ../../.env -- node .generated/worker.cjs",
-    "pretest:integration": "node scripts/build.mjs"
+    "pretest:integration": "pnpm sync && node scripts/build.mjs",
+    "sync": "tsx scripts/sync-extensions.ts",
+    "pretypecheck": "pnpm sync",
+    "pretest": "pnpm sync",
+    "preworker": "pnpm sync"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -24,6 +28,7 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sold/core": "workspace:*",
     "@sold/db": "workspace:*",
+    "@sold/extension-sdk": "workspace:*",
     "@sold/jobs": "workspace:*",
     "ioredis": "^6.0.0",
     "next": "^16.3.7",
@@ -38,6 +43,7 @@
     "@types/react-dom": "^19.3.0",
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
     "vitest": "^5.0.3"
   }
 }

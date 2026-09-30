@@ -10,7 +10,11 @@ export interface Metrics {
   registry: Registry;
   httpRequests: Counter<'route_class' | 'method' | 'status_class'>;
   httpDuration: Histogram<'route_class'>;
-  cacheEvents: Counter<'result'>;
+  /** Per-extension request rate and latency (Section 8A.8: a slow extension must be visible by name). */
+  extensionRequests: Counter<'extension' | 'status_class'>;
+  extensionDuration: Histogram<'extension'>;
+  interceptorCalls: Counter<'extension' | 'interceptor' | 'hook' | 'outcome'>;
+  interceptorDuration: Histogram<'extension' | 'interceptor'>;
 }
 
 /** RED metrics per route class + pool saturation gauges (Section 8A.10). */
@@ -57,10 +61,30 @@ export function createMetrics(
       buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.4, 0.5, 1, 1.5, 2.5, 5, 10],
       registers: [registry],
     }),
-    cacheEvents: new Counter({
-      name: 'sold_cache_events_total',
-      help: 'Application cache events by result.',
-      labelNames: ['result'],
+    extensionRequests: new Counter({
+      name: 'sold_extension_requests_total',
+      help: 'Extension route requests by extension and status class.',
+      labelNames: ['extension', 'status_class'],
+      registers: [registry],
+    }),
+    extensionDuration: new Histogram({
+      name: 'sold_extension_request_duration_seconds',
+      help: 'Extension route latency by extension.',
+      labelNames: ['extension'],
+      buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+      registers: [registry],
+    }),
+    interceptorCalls: new Counter({
+      name: 'sold_extension_interceptor_calls_total',
+      help: 'Cart/checkout interceptor outcomes (ok, veto, error, timeout, violation, saturated, bypassed, invalid-modify).',
+      labelNames: ['extension', 'interceptor', 'hook', 'outcome'],
+      registers: [registry],
+    }),
+    interceptorDuration: new Histogram({
+      name: 'sold_extension_interceptor_duration_ms',
+      help: 'Interceptor duration in milliseconds.',
+      labelNames: ['extension', 'interceptor'],
+      buckets: [0.1, 0.5, 1, 2, 5, 10, 20, 50],
       registers: [registry],
     }),
   };

@@ -1,4 +1,5 @@
 import {
+  assertQueueSafeName,
   idempotentJobId,
   queueClassPolicies,
   type EnqueueOptions,
@@ -33,6 +34,7 @@ export class InMemoryJobQueue implements JobQueue {
   async stop(): Promise<void> {}
 
   async ensureQueue(def: QueueDefinition): Promise<void> {
+    assertQueueSafeName('queue', def.name);
     this.defs.set(def.name, def);
     if (!this.queues.has(def.name)) this.queues.set(def.name, []);
   }
@@ -61,6 +63,7 @@ export class InMemoryJobQueue implements JobQueue {
   }
 
   async schedule(queue: string, cron: string, data: object = {}, key = ''): Promise<void> {
+    if (key) assertQueueSafeName('schedule key', key);
     this.schedules.push({ queue, cron, key, data });
   }
 

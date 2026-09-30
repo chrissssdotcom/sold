@@ -58,6 +58,28 @@ describe('evaluateReadiness', () => {
   });
 });
 
+describe('evaluateReadiness: extensions', () => {
+  it('is unavailable when the extension kernel cannot boot, even if every dependency is up', async () => {
+    const r = await evaluateReadiness({
+      isDraining: () => false,
+      checkPrimary: up,
+      checkExtensions: async () => {
+        throw new Error('extension "x" requires Base ^9.0.0');
+      },
+    });
+    expect(r.status).toBe('unavailable');
+    expect(r.checks.extensions?.status).toBe('down');
+    expect(JSON.stringify(r)).not.toMatch(/requires Base/); // reason is logged, not exposed on a public probe
+  });
+
+  it('is ok when the kernel is ready', async () => {
+    expect(
+      (await evaluateReadiness({ isDraining: () => false, checkPrimary: up, checkExtensions: up }))
+        .status,
+    ).toBe('ok');
+  });
+});
+
 describe('bearerMatches', () => {
   it('accepts only the exact token and fails closed when unset', () => {
     expect(bearerMatches('Bearer secret-token', 'secret-token')).toBe(true);

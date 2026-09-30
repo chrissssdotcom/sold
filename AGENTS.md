@@ -50,7 +50,7 @@ Also: never hold a DB transaction open across a network call; the order-critical
 apps/web/            Next.js: storefront + /admin + /api
 packages/core        domain logic (pure TS + DB, no framework)
 packages/db          Drizzle schema, migrations, seeds, reporting views
-packages/extension-sdk  public extension API (semver'd)
+packages/extension-sdk  public extension API (semver'd): manifest, hooks, events, slots, services
 packages/ui          design system, blocks, tokens
 packages/payments    gateway interface + adapters
 packages/identity    OIDC, SAML, SCIM, RBAC
@@ -105,6 +105,26 @@ Definition-of-done gate for any task: typecheck + lint + tests green, migrations
 - Decide, don't stall; record decisions in `docs/PROGRESS.md` or an ADR. Stop and ask only for hard-to-reverse choices (paid third-party services, public API changes after release).
 - Vendor capability claims (Azure SKUs, Cloudflare plan features, Cloudflare email limits) must be **verified against current official docs** and recorded in ADR-0002/0003 before the affected adapter is built.
 - Guardrails: never run destructive commands against non-local databases; never commit credentials; never disable tests or lint rules to get green; never weaken a security control for convenience.
+
+## Extensions (the heart of the design)
+
+- Read `docs/extending.md`; `extensions/loyalty-points` is the canonical, tested example.
+- Extensions depend only on `@sold/extension-sdk` (ESLint enforces it, including `import()`, `require()` and path reach-ins).
+- Tables are `ext_<name>_*` and never alter Base tables; migrations are linted (namespace + online safety) before they run.
+- Interceptors on cart/checkout have **no I/O**, a hard time budget, a declared `failPolicy` and a circuit breaker;
+  `performance.hotPath` must be declared honestly. Observers are asynchronous, at-least-once: make them idempotent.
+- Web and worker processes only _verify_ migrations; `pnpm db:migrate` / `sold ext:migrate` is a release-pipeline step.
+- `apps/web/.generated/extensions.ts` is generated from `sold.config.ts` by `sold ext:sync` (run by `pnpm dev|build|test`).
+  Never edit or commit it.
+
+## Testing notes for agents
+
+- `pnpm test:integration` needs PostgreSQL 16 and Redis. Set `SOLD_TEST_DATABASE_URL` (a server admin URL) and
+  `SOLD_TEST_REDIS_URL`, or have Docker for Testcontainers. Without Docker, a local `postgres` and `redis-server` work.
+- A test that only exercises synthetic inputs can pass while the real integration is broken (the shared ISR cache handler
+  once did). Prefer one end-to-end test against the real dependency (`apps/web/src/cache/isr.int.test.ts` is the model).
+- `pnpm` runs `pre*` scripts (e.g. `predev`, `pretest`, `pretypecheck` generate the extension registry).
+- Do not use `pkill -f`/`pgrep -f` with patterns that also match your own shell command line.
 
 ## Where things are decided
 

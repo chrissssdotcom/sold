@@ -52,6 +52,8 @@ jobs:
       - run: pnpm test
       # Rejects unsafe (locking / rewriting) migrations before they can reach a hot table.
       - run: pnpm db:lint-migrations
+      # The same load-order/compatibility check the app runs at boot, so a bad extension config fails CI, not a deploy.
+      - run: pnpm sold ext:list
       - run: pnpm build
 
   integration:

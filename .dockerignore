@@ -7,9 +7,11 @@
 .env
 .env.*
 !.env.example
-ops
-docs
-extensions
-environments
-*.md
-.terraform
+# Terraform state and plans never belong in an image.
+**/.terraform
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+tfplan
+# `extensions/`, `sold.config.ts`, `.sold/` and every workspace package ARE needed: the build generates the static
+# extension registry from them, and `pnpm install` needs every workspace manifest to satisfy --frozen-lockfile.

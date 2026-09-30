@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { createExtensionDb, migrateExtension, type Db } from '@sold/db';
+import { createExtensionDb, type Db } from '@sold/db';
 import type {
   ExtensionContext,
   ExtensionLogger,
@@ -49,6 +49,15 @@ export interface KernelDeps {
   db: Db;
   /** Direct (session) connection for migrations and advisory locks. */
   migrationUrl: string;
+  /**
+   * Applies one extension's migrations (lint + run). Supplied ONLY by the release-pipeline CLI: web and worker
+   * processes never migrate, so the migration linter and its parser stay out of the runtime bundles.
+   */
+  migrateExtension?(opts: {
+    url: string;
+    dir: string;
+    extension: string;
+  }): Promise<{ applied: string[] }>;
   queue: JobQueue;
   crypto: EnvelopeCrypto;
   audit?: AuditSink;
@@ -229,7 +238,12 @@ export class Kernel {
       const root = this.deps.extensionRoot(manifest.name);
       if (!root)
         throw new Error(`Cannot locate the package directory of extension "${manifest.name}"`);
-      const result = await migrateExtension({
+      if (!this.deps.migrateExtension) {
+        throw new Error(
+          'This process cannot run migrations: use `pnpm sold ext:migrate` (the release pipeline step)',
+        );
+      }
+      const result = await this.deps.migrateExtension({
         url: this.deps.migrationUrl,
         dir: join(root, manifest.migrations.dir),
         extension: manifest.name,
@@ -443,7 +457,7 @@ export class Kernel {
           `ext.${manifest.name}.${s.queue}`,
           s.cron,
           s.data ?? {},
-          `${manifest.name}:${s.queue}`,
+          `${manifest.name}/${s.queue}`,
         );
       }
     }

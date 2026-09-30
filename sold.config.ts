@@ -16,6 +16,7 @@ export default defineConfig({
     ],
   },
   locales: { default: 'en-AU', enabled: ['en-AU', 'en-US'] },
-  extensions: [],
+  // Worked example shipped with Base (docs/extending.md). Remove it to run the demo store with zero extensions.
+  extensions: ['loyalty-points'],
   gateways: { enabled: ['manual'] },
 });

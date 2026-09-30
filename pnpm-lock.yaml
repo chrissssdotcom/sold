@@ -75,6 +75,9 @@ importers:
       '@sold/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sold/extension-sdk':
+        specifier: workspace:*
+        version: link:../../packages/extension-sdk
       '@sold/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
@@ -112,6 +115,9 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       vitest:
         specifier: ^5.0.3
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
@@ -149,6 +155,15 @@ importers:
       '@sold/core':
         specifier: workspace:*
         version: link:../core
+      '@sold/db':
+        specifier: workspace:*
+        version: link:../db
+      '@sold/extension-sdk':
+        specifier: workspace:*
+        version: link:../extension-sdk
+      '@sold/jobs':
+        specifier: workspace:*
+        version: link:../jobs
       commander:
         specifier: ^15.0.0
         version: 15.0.0

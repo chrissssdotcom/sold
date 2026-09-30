@@ -3,6 +3,11 @@ import { ZodError } from 'zod';
 import type { CliContext } from './lib/context';
 import { CliError, ExitCode } from './lib/errors';
 import { customerNew } from './customer/new';
+import { extDocs } from './ext/docs';
+import { extList } from './ext/list';
+import { extMigrate } from './ext/migrate';
+import { extNew } from './ext/scaffold';
+import { extSync } from './ext/sync';
 import {
   envCost,
   envDown,
@@ -286,6 +291,60 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
           });
         },
       ),
+    );
+
+  // ---- extensions ----------------------------------------------------------------------------
+  program
+    .command('ext:new')
+    .description('scaffold a working extension from extensions/_template')
+    .argument('<name>', 'kebab-case extension name (2-31 chars)')
+    .option('--title <text>', 'one-line description')
+    .action(
+      action(async (context, name: string, options: { title?: string }) => {
+        await extNew(context, { name, ...(options.title ? { title: options.title } : {}) });
+      }),
+    );
+
+  program
+    .command('ext:sync')
+    .description(
+      'generate the static extension registry the web app and worker import (from sold.config.ts)',
+    )
+    .option('--out <path>', 'output file, relative to the repository root')
+    .action(
+      action(async (context, options: { out?: string }) => {
+        await extSync(context, options.out ? { out: options.out } : {});
+      }),
+    );
+
+  program
+    .command('ext:list')
+    .description('show the resolved extension load order, or every reason it cannot boot')
+    .action(
+      action(async (context) => {
+        await extList(context);
+      }),
+    );
+
+  program
+    .command('ext:migrate')
+    .description('apply extension migrations and lifecycle transitions (the release-pipeline step)')
+    .action(
+      action(async (context) => {
+        await extMigrate(context);
+      }),
+    );
+
+  program
+    .command('ext:docs')
+    .description(
+      'generate the extension reference from the manifests (docs/instance/extensions.md)',
+    )
+    .option('--out <path>', 'output file, relative to the repository root')
+    .action(
+      action(async (context, options: { out?: string }) => {
+        await extDocs(context, options.out ? { out: options.out } : {});
+      }),
     );
 
   // ---- upgrades ------------------------------------------------------------------------------

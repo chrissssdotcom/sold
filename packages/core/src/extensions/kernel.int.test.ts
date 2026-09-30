@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDb, migrate, type Db } from '@sold/db';
+import { migrateExtension } from '@sold/db/extension-migrations';
 import { defineExtension, type ExtensionManifest } from '@sold/extension-sdk';
 import { createTestDatabase, type TestDatabase } from '@sold/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -53,6 +54,7 @@ function makeKernel(
     extensionRoot: (name) => (name === 'loyalty-points' ? loyaltyRoot : undefined),
     db,
     migrationUrl: testDb.url,
+    migrateExtension,
     queue,
     crypto,
     audit: { record: async (e) => void audit.push(e) },
@@ -344,7 +346,7 @@ describe('loyalty-points (all contribution types)', () => {
       {
         queue: 'ext.loyalty-points.expire',
         cron: '0 3 * * *',
-        key: 'loyalty-points:expire',
+        key: 'loyalty-points/expire',
         data: { olderThanDays: 365 },
       },
     ]);

@@ -17,7 +17,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
 
 COPY . .
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --offline --frozen-lockfile --filter "@sold/web..."
+# The whole workspace, not just @sold/web: the build imports the configured extensions (extensions/*), which have
+# their own dependencies, and `sold.config.ts` at the root resolves @sold/core. A filtered install would not link them.
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --offline --frozen-lockfile
 
 # Identifies the build; must match at runtime so every replica of a release shares one cache namespace.
 ARG SOLD_BUILD_ID=dev

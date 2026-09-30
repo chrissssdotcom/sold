@@ -124,3 +124,18 @@ export function idempotentJobId(queue: string, key: string): string {
   const hex = h.subarray(0, 16).toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
+
+/**
+ * Names accepted by every queue adapter (the intersection: pg-boss allows alphanumerics, `_`, `-`, `.` and `/`).
+ * Adapters validate with it, and the in-memory test queue does too, so an illegal name fails in unit tests rather
+ * than when a worker first boots against the real queue.
+ */
+export const QUEUE_SAFE_NAME = /^[A-Za-z0-9_./-]+$/;
+
+export function assertQueueSafeName(kind: 'queue' | 'schedule key', value: string): void {
+  if (!QUEUE_SAFE_NAME.test(value)) {
+    throw new Error(
+      `Illegal ${kind} "${value}": only letters, digits, "_", "-", "." and "/" are allowed`,
+    );
+  }
+}

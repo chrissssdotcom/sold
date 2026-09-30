@@ -8,3 +8,4 @@ export * from './pg-stores';
 export * from './route-table';
 export * from './service-registry';
 export * from './settings';
+export * from './bootstrap';

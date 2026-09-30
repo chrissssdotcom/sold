@@ -1,4 +1,5 @@
 import { cachedReadiness } from '@/server/health';
+import { checkKernel } from '@/server/kernel';
 import { getRuntime } from '@/server/runtime';
 import { route } from '@/server/route';
 
@@ -14,6 +15,7 @@ export const GET = route(async () => {
     checkPrimary: async () => {
       await rt.db.pools.probe.query('SELECT 1');
     },
+    checkExtensions: checkKernel,
     ...(rt.db.hasReplica
       ? { checkReplica: async () => void (await rt.db.pools.replica.query('SELECT 1')) }
       : {}),

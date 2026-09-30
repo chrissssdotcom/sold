@@ -16,7 +16,7 @@
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
-    "db:migrate": "pnpm --filter @sold/db migrate",
+    "db:migrate": "pnpm --filter @sold/db migrate && pnpm sold ext:migrate",
     "db:seed": "pnpm --filter @sold/db seed",
     "db:lint-migrations": "pnpm --filter @sold/db lint-migrations",
     "format": "prettier --write .",

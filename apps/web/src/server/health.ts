@@ -15,6 +15,11 @@ export interface HealthDeps {
   /** Optional dependencies degrade the instance but never fail readiness. */
   checkReplica?: () => Promise<void>;
   checkRedis?: () => Promise<void>;
+  /**
+   * Extension kernel booted (load order valid, migrations applied). REQUIRED to serve: a release whose extensions
+   * cannot boot must never take traffic, so a rolling deploy keeps the previous revision.
+   */
+  checkExtensions?: () => Promise<void>;
   timeoutMs?: number;
 }
 
@@ -50,15 +55,16 @@ export async function evaluateReadiness(deps: HealthDeps): Promise<{
 }> {
   const timeoutMs = deps.timeoutMs ?? 1_500;
   const draining = deps.isDraining();
-  const [primary, replica, redis] = await Promise.all([
+  const [primary, replica, redis, extensions] = await Promise.all([
     run('primary', deps.checkPrimary, timeoutMs),
     run('replica', deps.checkReplica, timeoutMs),
     run('redis', deps.checkRedis, timeoutMs),
+    run('extensions', deps.checkExtensions, Math.max(timeoutMs, 30_000)),
   ]);
-  const checks = { primary, replica, redis };
+  const checks = { primary, replica, redis, extensions };
   let status: Readiness = 'ok';
   if (replica.status === 'down' || redis.status === 'down') status = 'degraded';
-  if (primary.status === 'down' || draining) status = 'unavailable';
+  if (primary.status === 'down' || extensions.status === 'down' || draining) status = 'unavailable';
   return { status, draining, checks };
 }
 

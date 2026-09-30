@@ -1,0 +1,5 @@
+{
+  "extends": "@sold/config/tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"], "jsx": "preserve", "lib": ["ES2023", "DOM"] },
+  "include": ["src"]
+}
