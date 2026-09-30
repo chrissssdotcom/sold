@@ -4,51 +4,112 @@ Live status. Update at every green checkpoint.
 
 ## Status
 
-| Phase                                          | State                                                        |
-| ---------------------------------------------- | ------------------------------------------------------------ |
-| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done                                                         |
-| Phase 0: Foundations                           | **in progress** (see "Phase 0 evidence" and "Pending" below) |
-| Phase 1: Extension SDK and Base kernel         | not started                                                  |
-| Phase 2: Commerce core                         | not started                                                  |
-| Phase 3: Payments and multi-currency           | not started                                                  |
-| Phase 4: Storefront and page builder           | not started                                                  |
-| Phase 5: Identity and admin                    | not started                                                  |
-| Phase 6: Social and growth                     | not started                                                  |
-| Phase 7: Data and platform                     | not started                                                  |
-| Phase 8: Hardening, scale proof, handover      | not started                                                  |
+| Phase                                          | State                                                                         |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done                                                                          |
+| Phase 0: Foundations                           | **built; not signed off** (see "Pending in Phase 0": no Docker, k6, or cloud) |
+| Phase 1: Extension SDK and Base kernel         | **built; under independent review** (see "Phase 1 evidence")                  |
+| Phase 2: Commerce core                         | not started                                                                   |
+| Phase 3: Payments and multi-currency           | not started                                                                   |
+| Phase 4: Storefront and page builder           | not started                                                                   |
+| Phase 5: Identity and admin                    | not started                                                                   |
+| Phase 6: Social and growth                     | not started                                                                   |
+| Phase 7: Data and platform                     | not started                                                                   |
+| Phase 8: Hardening, scale proof, handover      | not started                                                                   |
 
-Phases 1-8 are a large body of work. Nothing in them exists yet; this file does not claim otherwise.
+Phases 2-8 are most of the product. Nothing in them exists; this file does not claim otherwise. Every "verified" claim
+below names what was run.
+
+## Independent review
+
+Both phases were reviewed by a separate agent that did not write the code and was told to break it.
+
+**Phase 0 review** (report on file in the session) found, and this branch fixed, with a regression test for each:
+
+| Finding                                                                                                                                                       | Resolution                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Critical:** shared ISR cache handler never invalidated real pages (page tags live in `x-next-cache-tags`, not `ctx.tags`; my tests used synthetic contexts) | Rewritten against Next's real contract. New two-instance end-to-end test on a real Next app. **Verified the test fails on the old handler and passes on the new one.**                                    |
+| Clock skew lost invalidations                                                                                                                                 | Timestamps come from the Redis clock (measured offset); render-start ordering; skew test with injected skewed clocks                                                                                      |
+| `X-Robots-Tag` baked in at build time (broke build-once/promote)                                                                                              | Set at request time in `proxy.ts`; verified one build: prod sends no header, stage does                                                                                                                   |
+| A failed `CREATE INDEX CONCURRENTLY` left an INVALID index the runner journaled as success                                                                    | Runner drops invalid leftovers and verifies `indisvalid`                                                                                                                                                  |
+| Second runner died after `lock_timeout` while the first was slow                                                                                              | Runner lock is acquired (bounded, polling) before `lock_timeout` is set                                                                                                                                   |
+| Partition retention `DROP` stalled checkout writes; default-partition rows broke creation                                                                     | App-side retention with a 150 ms lock timeout and retries; default-partition rows are detected and reported. (`DETACH CONCURRENTLY` was tried first and is impossible with a DEFAULT partition; recorded) |
+| `PgBossQueue.health()` scanned the whole job table                                                                                                            | Index-only query on pg-boss's `job_common_i11`; `EXPLAIN` test over 300k rows                                                                                                                             |
+| Queue policy edits never reached existing queues; pg-boss ran under the 5 s DB statement timeout                                                              | `updateQueue` when it exists; queue sets its own session timeouts; tests run against a migrated DB                                                                                                        |
+| Log redaction was shallow                                                                                                                                     | Deep, key-normalised redaction plus credential scrubbing in strings and errors                                                                                                                            |
+| Extension boundary allowed `@sold/jobs`, `import()`, `require()`, path reach-ins                                                                              | Hardened and tested                                                                                                                                                                                       |
+| Migration linter (regex) let 40+ unsafe statements through and rejected the recipe it recommends                                                              | Rewritten on PostgreSQL's real parser (libpg-query WASM), 89-case adversarial corpus                                                                                                                      |
+| Readiness could load the DB and be starved by traffic                                                                                                         | Dedicated probe pool, 1 s coalesced cache, draining always live                                                                                                                                           |
+| Doc overclaims (`pg_stat_statements`, "every hot query has EXPLAIN")                                                                                          | Corrected; known gaps listed in `docs/scaling.md`                                                                                                                                                         |
+
+Not fixed (recorded in `docs/scaling.md` as known gaps): no DB circuit breaker or pool-wait bound; drain sizing is
+documented not enforced; Next keeps per-route cache-control per process; tag stale windows are treated as immediate expiry.
+
+**Phase 1 review:** requested; findings will be recorded here with their resolutions.
 
 ## Phase 0 evidence (what was actually run, in this sandbox)
 
-Local gate, run from the repo root: `pnpm format:check typecheck lint test db:lint-migrations build` all green, and
+Local gate from the repo root: `pnpm format:check typecheck lint test db:lint-migrations build` green, and
 `pnpm test:integration` green against a local PostgreSQL 16 and `redis-server` (`SOLD_TEST_DATABASE_URL` set).
+Also run: a clean-checkout install and build (simulating the image build stage) and the build output executed from a
+relocated directory in `NODE_ENV=production` with a stage-like environment.
 
-| Area                 | Verified by running                                                                                                                                                                                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Config and env       | Zod schemas for `sold.config.ts` and process env (fail-fast, no secret values in errors), non-prod safety switches. Unit tests.                                                                                                                                                                                                |
-| Migrations           | Custom runner applied to empty DBs: idempotent rerun, checksum immutability, forward-only ordering, rollback on failure, `CONCURRENTLY` outside a transaction, advisory-lock serialisation of 3 concurrent runners. Schema-vs-Drizzle equality test.                                                                           |
-| Migration linter     | 11 unit tests; runs over real migrations in CI.                                                                                                                                                                                                                                                                                |
-| Data layer           | Primary/replica handles (typed role), fallback without replica, statement timeout enforced on direct connections, DB-level timeouts set by migration, query counter for N+1 assertions. UUIDv7 function.                                                                                                                       |
-| Outbox partitioning  | Monthly partitions created ahead, rows routed to them, retention drops only partitions with no unpublished events (verified it refuses otherwise), `EXPLAIN` shows the partial index used by the publisher poll.                                                                                                               |
-| Web app              | Built (Turbopack) and run as the standalone server against real Postgres and Redis: `/api/health/live`, `/api/health/ready`, `/api/version`, `/metrics` (401 without token, Prometheus text with it), security headers, request IDs.                                                                                           |
-| Shared cache handler | Verified inside real Next: an ISR entry appears in Redis under `sold:cache:<buildId>:`. Integration tests: entry written by one instance served by another, tag revalidation visible cross-instance, build isolation, Redis TTL expiry, fail-open plus circuit breaker when Redis is killed, `revalidateTag` failure surfaced. |
-| Graceful shutdown    | Real process: SIGTERM turns readiness 503 (`draining: true`) then exits after the drain window. Primary DB unreachable: readiness 503, liveness 200, cached static page still served. Redis down: readiness `degraded` (200).                                                                                                  |
-| Worker               | Real bundle run: probes, authenticated `/metrics` with queue depth and oldest-job-age gauges, partition job ran on boot, SIGTERM drain. `PgBossQueue` integration tests: enqueue/process, idempotent enqueue, retry then dead-letter, age reporting, concurrency cap per queue class.                                          |
-| Extension boundary   | ESLint rules tested with the ESLint API: extensions cannot import Base internals; `packages/core` cannot import `next`/`react`.                                                                                                                                                                                                |
-| CI definition        | `.github/workflows/ci.yml` parses as YAML and every command in it was run locally. **The workflow itself has never run on GitHub.**                                                                                                                                                                                            |
+| Area               | Verified by running                                                                                                                                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config and env     | Zod schemas for `sold.config.ts` and process env (fail-fast, no secret values in errors), non-prod safety switches, build-id rule. Unit tests                                                                                                                         |
+| Migrations         | Custom runner: idempotent rerun, checksum immutability, forward-only ordering, rollback, `CONCURRENTLY` outside a transaction, invalid-index recovery, bounded runner-lock wait, string literals containing the breakpoint marker; schema-vs-Drizzle equality         |
+| Migration linter   | AST-based, 120 db unit tests including the adversarial corpus; runs over real migrations in CI                                                                                                                                                                        |
+| Data layer         | Typed primary/replica handles, replica fallback, timeouts (direct and DB-level), query counter, UUIDv7, feature flags with negative caching                                                                                                                           |
+| Outbox             | Monthly partitions, retention never drops unpublished events, writer latency bounded during retention, default-partition detection, `EXPLAIN` on the publisher poll                                                                                                   |
+| Web app            | Standalone server on real Postgres/Redis: probes, `/metrics` auth, headers, request IDs, runtime robots header, graceful drain (SIGTERM), primary-down and Redis-down behaviour                                                                                       |
+| Shared cache       | Real Next, two instances, one Redis: `revalidatePath`, `revalidateTag`, cross-instance regeneration, unrelated pages stay cached, Redis-down still serves                                                                                                             |
+| Worker             | Real bundle: probes, metrics with queue-age gauges, partition job, extension consumers, SIGTERM drain. pg-boss adapter: idempotent enqueue, retry then dead-letter, age, concurrency, policy update, index-only health                                                |
+| Extension boundary | ESLint rules tested through the ESLint API (packages, `import()`, `require()`, path reach-ins)                                                                                                                                                                        |
+| Terraform          | Independently re-run: `terraform init` (local provider mirror) and `validate` succeed for the `demo` dev and ephemeral roots against real azurerm 5.7.0 and cloudflare 5.26.0 schemas; the platform agent also ran `terraform test` (mock providers) and `actionlint` |
+
+## Phase 1 evidence
+
+| Area                       | Verified by running                                                                                                                                                                                                                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SDK manifest               | `defineExtension` validation (hot-path honesty, duplicate names, route access rules, permission namespacing, settings must parse empty, reporting views): 15 unit tests                                                                                                                                                            |
+| Load order                 | Deterministic ordering, semver `requires`, missing/disabled/incompatible dependencies, cycles with the path, all problems reported at once                                                                                                                                                                                         |
+| Interceptors               | Ordering, validated `modify`, veto sanitising, frozen payload, error isolation, fail-open/closed, hard timeout with late results discarded, circuit breaker and half-open single trial, bounded pool (deterministic saturation test), **hot-path guard blocks `fetch` and raw sockets and never reaches the server**               |
+| Observers                  | Idempotency keys, non-blocking publish that never throws, decode of `bigint`/`Date` payloads, retries, dropped deliveries for removed observers                                                                                                                                                                                    |
+| Services                   | Override precedence, config selection, tie refusal, lazy cached creation                                                                                                                                                                                                                                                           |
+| Settings and crypto        | AES-256-GCM envelope encryption (context-bound, tamper-evident, key rotation), secrets never in rows/audit/forms                                                                                                                                                                                                                   |
+| Kernel on real PostgreSQL  | Extension migrations under their own journal scope, lifecycle transitions, failed `onInstall` retry, vanished extension, encrypted settings in real rows, `uninstall --purge`, **unsafe extension migration rejected with nothing applied**, zero-extension and multi-extension boots                                              |
+| End to end on real pg-boss | `order.placed` published, consumed by the worker-wired kernel, observer writes to Postgres exactly once despite duplicate publish; namespaced queues and schedule exist; interceptor veto; protected route fails closed                                                                                                            |
+| Live processes             | Web + worker against Postgres/Redis: readiness includes the extension kernel, `401` on protected routes without an actor, `404/405`, traversal `404`, per-extension metrics. **Running the worker found a real bug** (illegal pg-boss schedule key) that unit tests missed; the in-memory queue now enforces the same naming rules |
+| Scaffold                   | A freshly generated extension loads, its migration lints clean, its own unit test passes and it type-checks                                                                                                                                                                                                                        |
+| Docs                       | `docs/extending.md` code blocks are verified against the real loyalty-points source by a test                                                                                                                                                                                                                                      |
 
 ## Pending in Phase 0 (not done, or not verifiable here)
 
-- **Docker images have never been built.** There is no Docker daemon in this sandbox. `Dockerfile` and `docker-compose.yml` are validated only with `docker compose config`. The `web` and `worker` build outputs were verified by running them directly with Node.
-- **k6 has never been run.** The binary could not be downloaded (egress policy). `baseline-browse.js` is type-checked against `@types/k6` only. CI installs k6 via `grafana/setup-k6-action`.
-- **Testcontainers path unexercised** (needs Docker). Integration tests used `SOLD_TEST_DATABASE_URL` and a spawned `redis-server`. No Keycloak (Phase 5).
-- **PgBouncer** is configured in compose but was not run; transaction-pooling behaviour is designed for (DB-level timeouts, direct connections for migrations and pg-boss) but not exercised.
-- **Grafana** dashboard JSON is validated against the metric names the code really exports; it has not been loaded into Grafana.
-- **Azure and Cloudflare**: no credentials here. Terraform, the `sold` environment CLI and the release workflows are owned by the Platform workstream and are reported separately (see the Platform section below once merged). Nothing has been applied to any cloud.
-- OpenTelemetry is wired but exports only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; adaptive sampling is PENDING(phase-7).
-- CSP with nonces is not set yet (see open questions).
-- Idle/active cost per profile (needs a subscription).
+- **Docker images have never been built.** No Docker daemon here. `Dockerfile` and `docker-compose.yml` are validated with
+  `docker compose config`, and the build's install/build/run steps were simulated from a clean checkout. CI now has a
+  `docker` job that builds both targets; it has never run.
+- **k6 has never been run** (binary download blocked). The scenario is type-checked against `@types/k6` only.
+- **GitHub Actions workflows have never run.** Their commands were run locally; `actionlint` passes on the platform workflows.
+- **Testcontainers path unexercised.** No Keycloak (Phase 5).
+- **PgBouncer** is configured in compose but was not run.
+- **Grafana** dashboard JSON is validated against the metric names the code exports; not loaded into Grafana.
+- **Azure and Cloudflare: nothing was planned or applied anywhere.** No credentials exist here. See ADR-0002 for which vendor
+  facts were verified from primary sources and which are marked `search` or `UNVERIFIED`; re-read before any apply.
+- The environment lifecycle, upgrade flow and promotion pipeline are implemented and unit-tested against fakes and real
+  temporary git repositories; the acceptance criteria that need a real subscription (an `env:up`/`env:down --verify` run,
+  a second customer provisioned, dev-to-prod promotion and rollback) are **not** met.
+- OpenTelemetry exports only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; adaptive sampling is PENDING(phase-7).
+- CSP with nonces is not set (see open questions). Idle/active cost per profile needs a subscription.
+- The migration linter cannot know schema state (e.g. `CONCURRENTLY` on a partitioned parent) and its parser is PostgreSQL 17.
+
+## Platform workstream (Terraform, CLI, pipeline)
+
+Built by a delegated agent and independently re-validated where possible. Deviations from the spec are recorded in
+ADR-0002/0003: azurerm is v5 (not v4); Cache-Tag purge works on every Cloudflare plan while Waiting Room needs Business or
+Enterprise; Cloudflare Email Sending is Beta so SMTP is the default `EmailTransport`; Container Apps managed certificates
+cannot renew behind Cloudflare so an Origin CA certificate is used; Cloudflare allows one ruleset per phase per zone so
+edge rules live in a customer-level module; `release.json` gained optional worker/migrate image digests. There is **no
+`migrate` Dockerfile target yet**, so previews have no way to migrate until one exists (PENDING).
 
 ## Phase plan
 
@@ -121,6 +182,12 @@ Threat model, security review, full k6/chaos suite and capacity report, waiting 
 | 2026-09-30 | `agentRules: false` (Next) and `agentGuidance: false` (turbo)                                                                                             | Both tools inject "agent rules" into `AGENTS.md`/`CLAUDE.md` when they detect an agent. This repo curates its own `AGENTS.md`                                 |
 | 2026-09-30 | Web env loaded with `dotenv-cli` (root `.env`)                                                                                                            | `@next/env` from `next.config.ts` is undone by Next's own env reload in dev                                                                                   |
 | 2026-09-30 | `pnpm sbom` does not exist in pnpm 10.33; CI uses `anchore/sbom-action`                                                                                   | Checked                                                                                                                                                       |
+| 2026-09-30 | Web and worker never run migrations; the kernel receives its migrator by injection and only the CLI supplies it                                           | Keeps the migration linter and its WASM parser out of runtime bundles; makes migrations an explicit release-pipeline step                                     |
+| 2026-09-30 | Extension registry is generated at build time (`sold ext:sync`) and imported statically                                                                   | Bundlers cannot follow dynamic `import(name)`; generated file is a build artifact, customer-owned config drives it                                            |
+| 2026-09-30 | Extension route responses default to `Cache-Control: no-store`                                                                                            | A personalised extension response must never be stored by the CDN by accident                                                                                 |
+| 2026-09-30 | Retention drop uses a short `lock_timeout` with retries instead of `DETACH CONCURRENTLY`                                                                  | PostgreSQL forbids concurrent detach while a DEFAULT partition exists; the default partition protects checkout writes                                         |
+| 2026-09-30 | `0000_init.sql` was annotated (`sold:allow dynamic-sql`) after being applied locally                                                                      | Pre-release only: no deployed database exists. Migrations are otherwise immutable                                                                             |
+| 2026-09-30 | Demo `sold.config.ts` enables `loyalty-points`                                                                                                            | So `pnpm dev` exercises the whole extension path; remove it to run with zero extensions                                                                       |
 
 ## Open questions
 
