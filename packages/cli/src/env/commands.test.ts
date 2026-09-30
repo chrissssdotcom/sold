@@ -281,6 +281,7 @@ describe('env:up', () => {
     const stageApply = stage.runner.calls[1]?.line ?? '';
     expect(stageApply).toContain('profiles/stage.tfvars');
     expect(stageApply).toContain('profiles/tier-standard.tfvars');
+    expect(stageApply).toContain('-var=tier=standard');
   });
 
   it('--dry-run prints the exact actions and executes nothing', async () => {

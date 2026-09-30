@@ -1,0 +1,132 @@
+# Destroys a preview environment when its PR closes (or on demand) and PROVES nothing is left:
+# `env:down --verify` queries Azure Resource Graph, soft-deleted Key Vaults and the Cloudflare API for
+# anything still carrying the env-id, and fails the run if it finds any (a failure also opens an issue).
+# Runs the trusted default-branch code, never the PR's code. Production is refused by the CLI.
+name: Preview environment down
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      env_id:
+        description: env-id to destroy, e.g. demo-eph-my-branch-1a2b (never a production id)
+        required: true
+        type: string
+      delete_orphans:
+        description: Delete the resource group directly if Terraform state is gone (ephemeral only)
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: env-down-${{ github.event.pull_request.number || inputs.env_id }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  down:
+    name: Destroy and verify
+    # Only same-repo PRs that carried the preview label; forks never had an environment.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(github.event.pull_request.labels.*.name, 'preview'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ephemeral
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+      pull-requests: write
+    env:
+      ARM_USE_OIDC: 'true'
+      ARM_USE_AZUREAD: 'true'
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_NONPROD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      # The R2 bucket is emptied through the S3 API before Terraform deletes it (ops/terraform/scripts/r2-empty.sh).
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      INPUT_ENV_ID: ${{ inputs.env_id }}
+      DELETE_ORPHANS: ${{ inputs.delete_orphans }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+      - name: Azure login (OIDC, non-production identity)
+        uses: Azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Resolve env-id
+        id: id
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_ENV_ID}" ]; then
+            env_id="${INPUT_ENV_ID}"
+          else
+            env_id="$(pnpm --silent sold env:id --branch "${HEAD_REF}" | tail -n1)"
+          fi
+          echo "env_id=${env_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Destroy and verify
+        id: destroy
+        env:
+          ENV_ID: ${{ steps.id.outputs.env_id }}
+        run: |
+          set -euo pipefail
+          args=(env:down "${ENV_ID}" --verify --require-cloudflare)
+          if [ "${DELETE_ORPHANS}" = "true" ]; then args+=(--delete-orphans); fi
+          pnpm --silent sold "${args[@]}"
+
+      - name: Report a failed verification
+        if: failure() && steps.destroy.outcome == 'failure'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ENV_ID: ${{ steps.id.outputs.env_id }}
+        with:
+          script: |
+            const title = `env:down failed for ${process.env.ENV_ID}`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: open } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'env-cleanup', per_page: 100 });
+            if (open.some((i) => i.title === title)) return;
+            await github.rest.issues.create({
+              ...context.repo,
+              title,
+              labels: ['env-cleanup'],
+              body: `Destroying or verifying \`${process.env.ENV_ID}\` failed: resources may still exist and cost money.\n\nRun: ${runUrl}\n\nSee docs/runbooks/environments.md (Troubleshooting).`,
+            });
+
+      - name: Comment on the PR
+        if: success() && env.PR_NUMBER != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ENV_ID: ${{ steps.id.outputs.env_id }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: Number(process.env.PR_NUMBER),
+              body: `Preview environment \`${process.env.ENV_ID}\` was destroyed and verified: nothing carrying its env-id remains in Azure or Cloudflare.`,
+            });

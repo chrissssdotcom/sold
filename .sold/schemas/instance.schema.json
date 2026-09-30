@@ -1,0 +1,21 @@
+{
+  "$id": "urn:sold:schema:instance",
+  "title": ".sold/instance.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "customer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "upstream": {
+      "type": "string"
+    },
+    "createdWithBaseVersion": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": ["customer", "createdWithBaseVersion"],
+  "additionalProperties": false
+}

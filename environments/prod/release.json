@@ -1,0 +1,7 @@
+{
+  "baseVersion": "0.1.0",
+  "instanceBuild": 1,
+  "imageDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "extensionVersions": {},
+  "terraformModuleVersion": "0.1.0"
+}

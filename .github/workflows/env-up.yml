@@ -1,0 +1,281 @@
+# Preview environments: build the branch once, create an ephemeral environment, comment the URL.
+#
+# Triggers: the `preview` label on a PR, a `/preview` comment on a PR (write access required), or a
+# manual dispatch. Fork PRs are never built here: they get no cloud credentials by design.
+# Everything runs through `pnpm sold env:up`, the same code path as a laptop (`--dry-run` shows the plan).
+#
+# Required repository variables: AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID_NONPROD, AZURE_CLIENT_ID_NONPROD
+# (from the customer bootstrap output `github_oidc`), ACR_NAME. Optional: CLOUDFLARE_ACCOUNT_ID,
+# CLOUDFLARE_ZONE_ID, SOLD_PREVIEW_DOMAIN (adds a hostname behind Cloudflare Access).
+# Required secret for the edge: CLOUDFLARE_API_TOKEN. GitHub environment: `ephemeral`.
+name: Preview environment up
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      name:
+        description: Preview name (becomes part of the env-id)
+        required: true
+        type: string
+      ttl:
+        description: Lifetime, e.g. 48h (max 7d)
+        required: false
+        default: 48h
+        type: string
+      seed:
+        description: Seed demo data
+        required: false
+        default: true
+        type: boolean
+
+# Queue rather than cancel: cancelling a Terraform apply mid-run leaves a stuck state lock.
+concurrency:
+  group: env-up-${{ github.event.pull_request.number || github.event.issue.number || inputs.name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Decide and resolve context
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.ctx.outputs.run }}
+      sha: ${{ steps.ctx.outputs.sha }}
+      branch: ${{ steps.ctx.outputs.branch }}
+      pr: ${{ steps.ctx.outputs.pr }}
+      owner: ${{ steps.ctx.outputs.owner }}
+      ttl: ${{ steps.ctx.outputs.ttl }}
+      seed: ${{ steps.ctx.outputs.seed }}
+    steps:
+      - name: Resolve trigger
+        id: ctx
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const eventName = context.eventName;
+            const out = (o) => Object.entries(o).forEach(([k, v]) => core.setOutput(k, String(v)));
+            const skip = (why) => { core.info(`not running: ${why}`); out({ run: false, sha: '', branch: '', pr: '', owner: '', ttl: '', seed: '' }); };
+
+            if (eventName === 'workflow_dispatch') {
+              out({
+                run: true,
+                sha: context.sha,
+                branch: context.payload.inputs.name,
+                pr: '',
+                owner: context.actor,
+                ttl: context.payload.inputs.ttl || '48h',
+                seed: context.payload.inputs.seed,
+              });
+              return;
+            }
+
+            let pr;
+            if (eventName === 'pull_request') {
+              pr = context.payload.pull_request;
+              const labels = pr.labels.map((l) => l.name);
+              if (context.payload.action === 'labeled' && context.payload.label.name !== 'preview') return skip('a different label was added');
+              if (!labels.includes('preview')) return skip('the PR has no preview label');
+            } else if (eventName === 'issue_comment') {
+              const body = context.payload.comment.body.trim();
+              if (!context.payload.issue.pull_request) return skip('comment is not on a PR');
+              if (!/^\/preview(\s|$)/.test(body)) return skip('not a /preview command');
+              if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(context.payload.comment.author_association)) {
+                return skip('commenter has no write access');
+              }
+              pr = (await github.rest.pulls.get({ ...context.repo, pull_number: context.payload.issue.number })).data;
+            } else {
+              return skip(`unsupported event ${eventName}`);
+            }
+
+            // Fork PRs get no cloud credentials and are never built with them.
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) return skip('the PR comes from a fork');
+
+            out({
+              run: true,
+              sha: pr.head.sha,
+              branch: pr.head.ref,
+              pr: pr.number,
+              owner: pr.user.login,
+              ttl: '48h',
+              seed: true,
+            });
+
+  up:
+    name: Build, create, verify
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ephemeral
+    permissions:
+      contents: read
+      id-token: write # OIDC federation to Azure (no stored credentials)
+      pull-requests: write
+      issues: write
+    env:
+      ARM_USE_OIDC: 'true'
+      ARM_USE_AZUREAD: 'true'
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_NONPROD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+      SOLD_PREVIEW_DOMAIN: ${{ vars.SOLD_PREVIEW_DOMAIN }}
+      # Untrusted values reach shell steps only through the environment, never by inline expansion.
+      HEAD_SHA: ${{ needs.gate.outputs.sha }}
+      HEAD_BRANCH: ${{ needs.gate.outputs.branch }}
+      PR_NUMBER: ${{ needs.gate.outputs.pr }}
+      PREVIEW_OWNER: ${{ needs.gate.outputs.owner }}
+      PREVIEW_TTL: ${{ needs.gate.outputs.ttl }}
+      PREVIEW_SEED: ${{ needs.gate.outputs.seed }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - name: Azure login (OIDC, non-production identity)
+        uses: Azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_NONPROD }}
+
+      - name: Compute identifiers
+        id: ids
+        run: |
+          set -euo pipefail
+          customer="$(pnpm --silent sold env:id --env dev | tail -n1)"
+          customer="${customer%%-*}"
+          base_version="$(tr -d '[:space:]' < .sold/base-version)"
+          {
+            echo "customer=${customer}"
+            echo "version=${base_version}+${customer}.${GITHUB_RUN_NUMBER}"
+            echo "registry=${ACR_NAME}.azurecr.io"
+            echo "tag=preview-${HEAD_SHA::12}"
+            if grep -qE '^FROM .* AS migrate' Dockerfile; then echo "has_migrate=true"; else echo "has_migrate=false"; fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Registry login
+        run: az acr login --name "$ACR_NAME"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build and push web
+        id: web
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: web
+          push: true
+          tags: ${{ steps.ids.outputs.registry }}/sold/web:${{ steps.ids.outputs.tag }}
+          build-args: |
+            SOLD_BUILD_ID=${{ needs.gate.outputs.sha }}
+            SOLD_VERSION=${{ steps.ids.outputs.version }}
+          secrets: |
+            next_actions_key=${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+          cache-from: type=gha,scope=preview-web
+          cache-to: type=gha,scope=preview-web,mode=max
+
+      - name: Build and push worker
+        id: worker
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: ${{ steps.ids.outputs.registry }}/sold/worker:${{ steps.ids.outputs.tag }}
+          build-args: |
+            SOLD_BUILD_ID=${{ needs.gate.outputs.sha }}
+            SOLD_VERSION=${{ steps.ids.outputs.version }}
+          cache-from: type=gha,scope=preview-worker
+          cache-to: type=gha,scope=preview-worker,mode=max
+
+      # The Dockerfile has no `migrate` target yet (PENDING(phase-0)). Without one, previews start with an
+      # unmigrated database and the migrate job cannot run; the step below is skipped until the target exists.
+      - name: Build and push migrate
+        id: migrate
+        if: steps.ids.outputs.has_migrate == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: migrate
+          push: true
+          tags: ${{ steps.ids.outputs.registry }}/sold/migrate:${{ steps.ids.outputs.tag }}
+          build-args: |
+            SOLD_BUILD_ID=${{ needs.gate.outputs.sha }}
+          cache-from: type=gha,scope=preview-migrate
+          cache-to: type=gha,scope=preview-migrate,mode=max
+
+      - name: Create or update the preview environment
+        id: up
+        env:
+          REGISTRY: ${{ steps.ids.outputs.registry }}
+          CUSTOMER: ${{ steps.ids.outputs.customer }}
+          VERSION: ${{ steps.ids.outputs.version }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+          MIGRATE_DIGEST: ${{ steps.migrate.outputs.digest }}
+        run: |
+          set -euo pipefail
+          args=(
+            env:up "$CUSTOMER" preview
+            --branch "$HEAD_BRANCH"
+            --ttl "$PREVIEW_TTL"
+            --owner "$PREVIEW_OWNER"
+            --release-version "$VERSION"
+            --image "${REGISTRY}/sold/web@${WEB_DIGEST}"
+            --worker-image "${REGISTRY}/sold/worker@${WORKER_DIGEST}"
+          )
+          if [ -n "${MIGRATE_DIGEST}" ]; then args+=(--migrate-image "${REGISTRY}/sold/migrate@${MIGRATE_DIGEST}"); fi
+          if [ "${PREVIEW_SEED}" = "true" ]; then args+=(--seed demo); fi
+          pnpm --silent sold "${args[@]}" | tee up.log
+          {
+            echo "env_id=$(pnpm --silent sold env:id --customer "$CUSTOMER" --branch "$HEAD_BRANCH" | tail -n1)"
+            echo "summary=$(grep '^ready:' up.log | tail -n1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment the preview URL
+        if: env.PR_NUMBER != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          SUMMARY: ${{ steps.up.outputs.summary }}
+          ENV_ID: ${{ steps.up.outputs.env_id }}
+        with:
+          script: |
+            const marker = '<!-- sold-preview -->';
+            const body = [
+              marker,
+              '### Preview environment',
+              '',
+              '`' + process.env.SUMMARY + '`',
+              '',
+              'It is private (Cloudflare Access), uses test payment keys and demo data, and is destroyed automatically when it expires or when this PR closes.',
+              'Extend it with `pnpm sold env:extend ' + process.env.ENV_ID + ' --ttl 24h`.',
+            ].join('\n');
+            const issue_number = Number(process.env.PR_NUMBER);
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number });
+            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (existing) await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number, body });

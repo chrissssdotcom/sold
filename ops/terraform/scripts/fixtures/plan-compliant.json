@@ -1,0 +1,142 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.16.4",
+  "resource_changes": [
+    {
+      "address": "module.environment.azurerm_resource_group.this",
+      "mode": "managed",
+      "type": "azurerm_resource_group",
+      "name": "this",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "rg-sold-demo-dev",
+          "location": "australiaeast",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:owner": "platform@demo.example",
+            "sold:expires-at": "never",
+            "sold:release": "1.4.0+demo.27",
+            "sold:env-id": "demo-dev"
+          }
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.keyvault.azurerm_key_vault.unprotected[0]",
+      "mode": "managed",
+      "type": "azurerm_key_vault",
+      "name": "unprotected[0]",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "kv-demodev-abc123",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:owner": "platform@demo.example",
+            "sold:expires-at": "never",
+            "sold:release": "1.4.0+demo.27",
+            "sold:env-id": "demo-dev"
+          }
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.container_apps.azurerm_container_app.web",
+      "mode": "managed",
+      "type": "azurerm_container_app",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "web",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:owner": "platform@demo.example",
+            "sold:expires-at": "never",
+            "sold:env-id": "demo-dev"
+          }
+        },
+        "after_unknown": {
+          "tags": {
+            "sold:release": true
+          }
+        }
+      }
+    },
+    {
+      "address": "module.environment.azurerm_role_assignment.acr_pull[0]",
+      "mode": "managed",
+      "type": "azurerm_role_assignment",
+      "name": "acr_pull[0]",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "scope": "/x",
+          "role_definition_name": "AcrPull"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.azurerm_management_lock.resource_group[0]",
+      "mode": "managed",
+      "type": "azurerm_management_lock",
+      "name": "resource_group[0]",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "lock",
+          "lock_level": "CanNotDelete"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.cloudflare_edge[0].cloudflare_dns_record.origin",
+      "mode": "managed",
+      "type": "cloudflare_dns_record",
+      "name": "origin",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "dev.demo.example"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "azurerm_resource_group.old",
+      "mode": "managed",
+      "type": "azurerm_resource_group",
+      "name": "old",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["delete"],
+        "before": null,
+        "after": null,
+        "after_unknown": {}
+      }
+    }
+  ]
+}

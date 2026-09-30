@@ -1,0 +1,49 @@
+{
+  "$id": "urn:sold:schema:release",
+  "title": "environments/<env>/release.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "baseVersion": {
+      "type": "string"
+    },
+    "instanceBuild": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "imageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "workerImageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "migrateImageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "extensionVersions": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "terraformModuleVersion": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "baseVersion",
+    "instanceBuild",
+    "imageDigest",
+    "extensionVersions",
+    "terraformModuleVersion"
+  ],
+  "additionalProperties": false
+}

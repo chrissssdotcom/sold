@@ -17,3 +17,5 @@ test-results
 next-env.d.ts
 test-fixtures/isr-app/.next
 test-fixtures/isr-app/next-env.d.ts
+tfplan
+*.tfplan

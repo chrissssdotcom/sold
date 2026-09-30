@@ -1,0 +1,150 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.16.4",
+  "resource_changes": [
+    {
+      "address": "module.environment.azurerm_resource_group.this",
+      "mode": "managed",
+      "type": "azurerm_resource_group",
+      "name": "this",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "rg",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:owner": "platform@demo.example",
+            "sold:expires-at": "never",
+            "sold:release": "1.4.0+demo.27",
+            "sold:env-id": "demo-dev"
+          }
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.postgres.azurerm_postgresql_flexible_server.unprotected[0]",
+      "mode": "managed",
+      "type": "azurerm_postgresql_flexible_server",
+      "name": "unprotected[0]",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "psql",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:expires-at": "never",
+            "sold:release": "1.4.0+demo.27",
+            "sold:env-id": "demo-dev"
+          }
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.redis[0].azurerm_managed_redis.this",
+      "mode": "managed",
+      "type": "azurerm_managed_redis",
+      "name": "this",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "redis",
+          "tags": null
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.network.azurerm_virtual_network.this",
+      "mode": "managed",
+      "type": "azurerm_virtual_network",
+      "name": "this",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "vnet",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:owner": "platform@demo.example",
+            "sold:expires-at": "",
+            "sold:release": "1.4.0+demo.27",
+            "sold:env-id": "demo-dev"
+          }
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.observability.azurerm_log_analytics_workspace.this",
+      "mode": "managed",
+      "type": "azurerm_log_analytics_workspace",
+      "name": "this",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "log",
+          "tags": null
+        },
+        "after_unknown": {
+          "tags": true
+        }
+      }
+    },
+    {
+      "address": "module.environment.module.network.azurerm_subnet.aca",
+      "mode": "managed",
+      "type": "azurerm_subnet",
+      "name": "aca",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "snet-aca"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.environment.module.observability.azurerm_application_insights.this",
+      "mode": "managed",
+      "type": "azurerm_application_insights",
+      "name": "this",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "name": "appi",
+          "tags": {
+            "sold:customer": "demo",
+            "sold:environment": "dev",
+            "sold:profile": "dev",
+            "sold:owner": "platform@demo.example",
+            "sold:expires-at": "never",
+            "sold:release": "1.4.0+demo.27",
+            "sold:env-id": "demo-other"
+          }
+        },
+        "after_unknown": {}
+      }
+    }
+  ]
+}

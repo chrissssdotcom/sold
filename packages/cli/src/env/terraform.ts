@@ -65,8 +65,11 @@ export function initStep(target: TerraformTarget): Step {
 export function varFiles(target: TerraformTarget): string[] {
   const info = PROFILE_INFO[target.profile];
   const files = [`-var-file=${join(profilesDir(target.cwd), info.tfvars)}`];
-  if (info.usesTier)
+  if (info.usesTier) {
     files.push(`-var-file=${join(profilesDir(target.cwd), tierTfvars(target.tier))}`);
+    // The composite records the tier; it must match the capacity file so the two can never disagree.
+    files.push(`-var=tier=${target.tier}`);
+  }
   return files;
 }
 

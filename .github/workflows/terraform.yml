@@ -1,0 +1,298 @@
+# Infrastructure checks. Blocking: fmt, validate (Terraform AND OpenTofu), offline module tests, the
+# mandatory-tag policy on real plans. Report-only for now: checkov and trivy (PENDING(phase-8): triage
+# the baseline findings, then make them blocking), and the cost estimate (needs an Infracost account).
+# Nightly: read-only drift plan of every environment, including production (with a separate READ-ONLY
+# identity that cannot change anything). Drift opens or updates a GitHub issue; nothing is applied here.
+#
+# Plan jobs need the customer bootstrap outputs as repository variables (AZURE_TENANT_ID,
+# AZURE_SUBSCRIPTION_ID_NONPROD, AZURE_CLIENT_ID_NONPROD; environment `prod-readonly`:
+# AZURE_SUBSCRIPTION_ID_PROD, AZURE_CLIENT_ID_PROD_RO) and are skipped until those exist.
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - 'ops/terraform/**'
+      - 'packages/cli/templates/terraform/**'
+      - '.github/workflows/terraform.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/terraform/**'
+      - '.github/workflows/terraform.yml'
+  schedule:
+    - cron: '43 3 * * *' # nightly drift plans
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  ARM_USE_OIDC: 'true'
+  ARM_USE_AZUREAD: 'true'
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+jobs:
+  static:
+    name: fmt, validate, test (${{ matrix.tool }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [terraform, tofu]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: matrix.tool == 'terraform'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+      - if: matrix.tool == 'tofu'
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.0
+          tofu_wrapper: false
+      # init -backend=false + validate every module and environment root, `test` for modules with
+      # offline tests (mock providers), then fmt -check. No cloud credentials involved.
+      - run: TF_BIN=${{ matrix.tool }} ops/terraform/scripts/validate-all.sh
+
+  scripts:
+    name: Tag policy checker and CLI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sold/cli typecheck
+      - run: pnpm --filter @sold/cli test
+      # The committed fixtures prove the checker fails on a plan with missing tags and passes a compliant one.
+      - name: Tag checker rejects the violating fixture
+        run: |
+          set -u
+          pnpm exec tsx ops/terraform/scripts/check-tags.ts ops/terraform/scripts/fixtures/plan-compliant.json --env-id demo-dev
+          if pnpm exec tsx ops/terraform/scripts/check-tags.ts ops/terraform/scripts/fixtures/plan-violations.json; then
+            echo "the violating fixture unexpectedly passed the tag policy"; exit 1
+          fi
+
+  scan:
+    name: Policy scan (report-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: checkov
+        uses: bridgecrewio/checkov-action@2f9fbe2d1e51440f8f5c42abc829aad8e9e4faab # v12.3127.0
+        with:
+          directory: ops/terraform
+          framework: terraform
+          soft_fail: true
+          quiet: true
+      - name: trivy (misconfiguration)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: ops/terraform
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          format: table
+
+  cost:
+    name: Cost estimate (placeholder)
+    if: >-
+      github.event_name == 'pull_request' && vars.INFRACOST_ENABLED == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      # PENDING(phase-0, needs an Infracost account): a baseline vs head diff per environment root. Until
+      # then this prints an estimate for the demo dev root and never blocks (state is not needed for pricing).
+      - name: Estimate demo/dev
+        continue-on-error: true
+        run: |
+          infracost breakdown \
+            --path ops/terraform/environments/demo/dev \
+            --terraform-var-file ../../../profiles/dev.tfvars \
+            --format table >> "$GITHUB_STEP_SUMMARY"
+
+  envs:
+    name: Discover environments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.find.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Persistent non-production environments (dev, stage) that exist as Terraform roots
+        id: find
+        run: |
+          set -euo pipefail
+          envs=()
+          for e in dev stage; do
+            if compgen -G "ops/terraform/environments/*/${e}/main.tf" > /dev/null; then envs+=("${e}"); fi
+          done
+          json="$(printf '%s\n' "${envs[@]}" | jq -R . | jq -sc '{env: .}')"
+          echo "matrix=${json}" >> "$GITHUB_OUTPUT"
+
+  plan:
+    name: Plan ${{ matrix.env }} (tags, drift)
+    needs: envs
+    # Same-repo only (forks get no OIDC), and only once the customer bootstrap has run.
+    if: >-
+      vars.AZURE_CLIENT_ID_NONPROD != '' && needs.envs.outputs.matrix != '{"env":[]}' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.envs.outputs.matrix) }}
+    environment: ${{ matrix.env }}
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_NONPROD }}
+      TARGET_ENV: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+      - name: Azure login (OIDC, non-production identity)
+        uses: Azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_NONPROD }}
+      - name: Plan (read-only) and enforce the mandatory tags
+        id: plan
+        run: |
+          set -uo pipefail
+          env_id="$(pnpm --silent sold env:id --env "${TARGET_ENV}" | tail -n1)"
+          echo "env_id=${env_id}" >> "$GITHUB_OUTPUT"
+          # Exit 0: no changes. Exit 6: the plan has changes (drift, or a change this PR introduces). Else: error.
+          pnpm --silent sold env:plan "${env_id}" --no-lock --json-out plan.json
+          code=$?
+          if [ "${code}" -ne 0 ] && [ "${code}" -ne 6 ]; then exit "${code}"; fi
+          echo "drift=$([ "${code}" -eq 6 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # The plan JSON can contain sensitive values: it is checked here and never uploaded.
+          pnpm exec tsx ops/terraform/scripts/check-tags.ts plan.json --env-id "${env_id}"
+      - name: Open or update a drift issue (nightly only)
+        if: github.event_name == 'schedule' && steps.plan.outputs.drift == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ENV_ID: ${{ steps.plan.outputs.env_id }}
+        with:
+          script: |
+            const title = `Terraform drift: ${process.env.ENV_ID}`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `The nightly plan of \`${process.env.ENV_ID}\` has changes that are not in git (someone changed it by hand, or a provider default moved).\n\nRun: ${runUrl}\n\nNobody changes environments by hand: reconcile by fixing the code or re-applying through the pipeline.`;
+            const { data: open } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'terraform-drift', per_page: 100 });
+            const existing = open.find((i) => i.title === title);
+            if (existing) await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            else await github.rest.issues.create({ ...context.repo, title, labels: ['terraform-drift'], body });
+
+  plan-prod:
+    name: Drift plan prod (read-only identity)
+    # Never on pull requests: production state is read only by the nightly job and manual dispatches.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && vars.AZURE_CLIENT_ID_PROD_RO != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: prod-readonly
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PROD_RO }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+      - name: Azure login (OIDC, READ-ONLY production identity)
+        uses: Azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_PROD_RO }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+      - name: Plan (read-only) and enforce the mandatory tags
+        id: plan
+        run: |
+          set -uo pipefail
+          env_id="$(pnpm --silent sold env:id --env prod | tail -n1)"
+          echo "env_id=${env_id}" >> "$GITHUB_OUTPUT"
+          pnpm --silent sold env:plan "${env_id}" --no-lock --json-out plan.json
+          code=$?
+          if [ "${code}" -ne 0 ] && [ "${code}" -ne 6 ]; then exit "${code}"; fi
+          echo "drift=$([ "${code}" -eq 6 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          pnpm exec tsx ops/terraform/scripts/check-tags.ts plan.json --env-id "${env_id}"
+      - name: Open or update a drift issue
+        if: steps.plan.outputs.drift == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ENV_ID: ${{ steps.plan.outputs.env_id }}
+        with:
+          script: |
+            const title = `Terraform drift: ${process.env.ENV_ID}`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `The plan of PRODUCTION \`${process.env.ENV_ID}\` has changes that are not in git.\n\nRun: ${runUrl}\n\nReconcile through a promotion PR; nobody changes prod by hand.`;
+            const { data: open } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'terraform-drift', per_page: 100 });
+            const existing = open.find((i) => i.title === title);
+            if (existing) await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            else await github.rest.issues.create({ ...context.repo, title, labels: ['terraform-drift', 'prod'], body });
