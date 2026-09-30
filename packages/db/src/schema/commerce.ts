@@ -107,6 +107,10 @@ export const carts = pgTable('carts', {
   currency: char('currency', { length: 3 }).notNull(),
   status: text('status').notNull().default('open'),
   version: integer('version').notNull().default(1),
+  couponCodes: text('coupon_codes')
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -202,4 +206,36 @@ export const idempotencyKeys = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (t) => [primaryKey({ columns: [t.scope, t.key] })],
+);
+
+export const promotions = pgTable('promotions', {
+  id: id(),
+  code: text('code'),
+  name: text('name').notNull(),
+  active: boolean('active').notNull().default(true),
+  startsAt: timestamp('starts_at', { withTimezone: true }),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  definition: jsonb('definition').notNull(),
+  usageLimit: integer('usage_limit'),
+  perCustomerLimit: integer('per_customer_limit'),
+  usageCount: integer('usage_count').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const promotionRedemptions = pgTable(
+  'promotion_redemptions',
+  {
+    id: id(),
+    promotionId: uuid('promotion_id')
+      .notNull()
+      .references(() => promotions.id, { onDelete: 'restrict' }),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    customerKey: text('customer_key').notNull(),
+    amount: minor('amount').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('promotion_redemptions_order_idx').on(t.orderId)],
 );
