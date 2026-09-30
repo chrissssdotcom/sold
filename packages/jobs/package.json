@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@sold/config": "workspace:*",
+    "@sold/db": "workspace:*",
     "@sold/testing": "workspace:*",
     "vitest": "^5.0.3"
   }

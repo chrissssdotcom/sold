@@ -10,6 +10,10 @@ export function proxy(request: NextRequest) {
   headers.set('x-request-id', requestId);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('x-request-id', requestId);
+  // Read at REQUEST time so one build/image can be promoted dev -> stage -> prod (Section 8C.6). A header set in
+  // next.config would be frozen at build time. Mirrors safetySwitchesFor(env).blockIndexing in @sold/core.
+  if (process.env['SOLD_ENVIRONMENT'] !== 'prod')
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   return response;
 }
 

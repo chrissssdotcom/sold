@@ -87,12 +87,12 @@ export interface EnqueueOptions {
 
 export interface QueueHealth {
   name: string;
-  /** Waiting to run (created + retry). */
+  /** Waiting to run (created + retry, not blocked). */
   depth: number;
-  active: number;
-  failed: number;
   /** Age of the oldest job that is ready to run and has not started. 0 when empty. */
   oldestAgeSeconds: number;
+  /** Jobs parked in the queue's dead-letter queue. 0 when the queue has none. */
+  deadLetterDepth: number;
 }
 
 export interface JobQueue {

@@ -4,11 +4,6 @@ import { fileURLToPath } from 'node:url';
 import type { NextConfig } from 'next';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const environment = process.env.SOLD_ENVIRONMENT ?? 'local';
-// Mirrors safetySwitchesFor(environment).blockIndexing in @sold/core (asserted by a test): this file
-// runs in plain Node and cannot import workspace TypeScript sources.
-const blockIndexing = environment !== 'prod';
-
 const cacheHandlerPath = resolve(here, '.generated/cache-handler.cjs');
 
 export const securityHeaders = [
@@ -21,7 +16,6 @@ export const securityHeaders = [
     value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
   },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
-  ...(blockIndexing ? [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] : []),
 ];
 
 const config: NextConfig = {

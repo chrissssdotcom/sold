@@ -68,9 +68,8 @@ export class InMemoryJobQueue implements JobQueue {
     return {
       name: queue,
       depth: this.queues.get(queue)?.length ?? 0,
-      active: 0,
-      failed: this.dead.filter((d) => d.queue === queue).length,
       oldestAgeSeconds: 0,
+      deadLetterDepth: this.dead.filter((d) => d.queue === queue).length,
     };
   }
 

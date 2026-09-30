@@ -38,8 +38,14 @@ export interface KernelDeps {
   baseVersion?: string;
   config: { extensions: readonly ExtensionEntry[]; services?: Readonly<Record<string, string>> };
   candidates: readonly ExtensionCandidate[];
-  /** Absolute directory of an extension's package (its `migrations.dir` is relative to it). */
+  /** Absolute directory of an extension's package (its `migrations.dir` is relative to it). Needed to run migrations. */
   extensionRoot(name: string): string | undefined;
+  /**
+   * Names of an extension's migration files, known at build time. Web and worker processes verify against
+   * this list instead of reading the filesystem, because the runtime image does not contain `extensions/`.
+   * Defaults to reading `extensionRoot`.
+   */
+  migrationFiles?(name: string): readonly string[] | Promise<readonly string[]>;
   db: Db;
   /** Direct (session) connection for migrations and advisory locks. */
   migrationUrl: string;
@@ -233,28 +239,37 @@ export class Kernel {
     return out;
   }
 
-  /** Fails fast if any enabled extension has unapplied migrations (web/worker boot check). */
+  /**
+   * Fails fast if any enabled extension has unapplied migrations (web/worker boot check). Compares the exact
+   * set of migration names, so a missing or extra journal entry is caught, not just a count mismatch.
+   */
   async verifyMigrations(): Promise<void> {
-    const { rows } = await this.deps.db.pools.primary.query<{ scope: string; n: string }>(
-      `SELECT scope, count(*)::text AS n FROM _sold_migrations WHERE scope LIKE 'ext:%' GROUP BY scope`,
+    const { rows } = await this.deps.db.pools.primary.query<{ scope: string; name: string }>(
+      `SELECT scope, name FROM _sold_migrations WHERE scope LIKE 'ext:%'`,
     );
-    const applied = new Map(rows.map((r) => [r.scope, Number(r.n)]));
-    const missing: string[] = [];
+    const applied = new Map<string, Set<string>>();
+    for (const r of rows) applied.set(r.scope, (applied.get(r.scope) ?? new Set()).add(r.name));
+    const problems: string[] = [];
     for (const { manifest } of this.extensions) {
       if (!manifest.migrations) continue;
-      const { readdir } = await import('node:fs/promises');
-      const root = this.deps.extensionRoot(manifest.name);
-      if (!root) continue;
-      const files = (await readdir(join(root, manifest.migrations.dir))).filter((f) =>
-        f.endsWith('.sql'),
-      );
-      if ((applied.get(`ext:${manifest.name}`) ?? 0) < files.length) missing.push(manifest.name);
+      const expected = await this.expectedMigrations(manifest.name, manifest.migrations.dir);
+      const have = applied.get(`ext:${manifest.name}`) ?? new Set<string>();
+      const missing = expected.filter((n) => !have.has(n));
+      if (missing.length > 0) problems.push(`${manifest.name} (${missing.join(', ')})`);
     }
-    if (missing.length > 0) {
+    if (problems.length > 0) {
       throw new Error(
-        `Extension migrations are not applied for: ${missing.join(', ')}. Run the migration step (pnpm db:migrate) before starting.`,
+        `Extension migrations are not applied for: ${problems.join('; ')}. Run the migration step (pnpm db:migrate) before starting.`,
       );
     }
+  }
+
+  private async expectedMigrations(name: string, dir: string): Promise<readonly string[]> {
+    if (this.deps.migrationFiles) return this.deps.migrationFiles(name);
+    const root = this.deps.extensionRoot(name);
+    if (!root) throw new Error(`Cannot locate the package directory of extension "${name}"`);
+    const { readdir } = await import('node:fs/promises');
+    return (await readdir(join(root, dir))).filter((f) => f.endsWith('.sql')).sort();
   }
 
   /**

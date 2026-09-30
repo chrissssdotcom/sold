@@ -29,7 +29,10 @@ export interface MigrateOptions {
   url: string;
   dir: string;
   scope?: string;
+  /** Per-statement lock wait inside a migration. Applied AFTER the runner lock is held. */
   lockTimeoutMs?: number;
+  /** How long a second runner waits for the first to finish (rolling deploys). */
+  runnerLockWaitMs?: number;
   onLog?: (message: string) => void;
 }
 
@@ -39,7 +42,10 @@ export interface MigrateResult {
 }
 
 const NO_TX_MARKER = /^\s*--\s*sold:no-transaction\b/m;
-const BREAKPOINT = '--> statement-breakpoint';
+// A breakpoint is a whole line; a string literal that merely contains the text must never be split.
+const BREAKPOINT_LINE = /^[ \t]*--> statement-breakpoint[ \t]*$/m;
+const CONCURRENT_INDEX =
+  /^\s*create\s+(?:unique\s+)?index\s+concurrently\s+(?:if\s+not\s+exists\s+)?("[^"]+"|[a-z_][a-z0-9_$]*)/i;
 // Fixed key so every runner in every environment contends on the same lock.
 const ADVISORY_LOCK_KEY = 7_265_034_211;
 
@@ -61,7 +67,7 @@ export async function loadMigrations(dir: string): Promise<MigrationFile[]> {
 
 export function splitStatements(sql: string): string[] {
   return sql
-    .split(BREAKPOINT)
+    .split(new RegExp(BREAKPOINT_LINE.source, 'gm'))
     .map((s) => s.trim())
     .filter((s) => s.replace(/--[^\n]*/g, '').trim().length > 0);
 }
@@ -85,11 +91,13 @@ export async function migrate(opts: MigrateOptions): Promise<MigrateResult> {
   const applied: string[] = [];
   const skipped: string[] = [];
   try {
-    // Migrations set their own limits: never inherit the app's 5s statement timeout, but never
-    // wait indefinitely for a lock on a hot table either.
+    // Wait for any other runner FIRST (bounded, polling), and only then set the per-statement lock_timeout:
+    // otherwise the lock timeout would also cap the wait for the runner lock and a second runner would
+    // die while the first is still working through a slow migration.
     await client.query('SET statement_timeout = 0');
+    await acquireRunnerLock(client, opts.runnerLockWaitMs ?? 600_000);
+    // Migrations never inherit the app's 5s statement timeout, but never wait indefinitely for a hot-table lock.
     await client.query(`SET lock_timeout = '${Math.trunc(opts.lockTimeoutMs ?? 5_000)}ms'`);
-    await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_LOCK_KEY]);
     await client.query(JOURNAL_DDL);
 
     const done = new Map<string, string>(
@@ -131,7 +139,8 @@ export async function migrate(opts: MigrateOptions): Promise<MigrateResult> {
       if (file.transactional) {
         await client.query('BEGIN');
         try {
-          await client.query(file.sql.replaceAll(BREAKPOINT, ''));
+          // Breakpoints are SQL comments: harmless in a transactional multi-statement query, so leave them intact.
+          await client.query(file.sql);
           await record(client, scope, file, Date.now() - started);
           await client.query('COMMIT');
         } catch (error) {
@@ -142,7 +151,8 @@ export async function migrate(opts: MigrateOptions): Promise<MigrateResult> {
         }
       } else {
         try {
-          for (const statement of splitStatements(file.sql)) await client.query(statement);
+          for (const statement of splitStatements(file.sql))
+            await runNoTransactionStatement(client, statement);
         } catch (error) {
           throw new Error(
             `[${scope}] ${file.name} failed (no transaction, may be partially applied; statements must be idempotent): ${(error as Error).message}`,
@@ -170,4 +180,48 @@ async function record(
     'INSERT INTO _sold_migrations (scope, name, checksum, duration_ms) VALUES ($1, $2, $3, $4)',
     [scope, file.name, file.checksum, durationMs],
   );
+}
+
+async function acquireRunnerLock(client: Client, waitMs: number): Promise<void> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const { rows } = await client.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [
+      ADVISORY_LOCK_KEY,
+    ]);
+    if (rows[0]?.ok) return;
+    if (Date.now() >= deadline)
+      throw new Error(`Another migration runner held the lock for more than ${waitMs} ms`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+/**
+ * A failed `CREATE INDEX CONCURRENTLY` leaves an INVALID index behind. With `IF NOT EXISTS` a rerun would then
+ * skip it and the migration would be journaled with an index that is never used (and, for UNIQUE, never
+ * enforces anything). So: drop an invalid leftover before building, and verify validity afterwards.
+ */
+async function runNoTransactionStatement(client: Client, statement: string): Promise<void> {
+  // Leading `--` comment lines (e.g. `-- sold:allow ...`) come before the statement keyword.
+  const index = CONCURRENT_INDEX.exec(
+    statement.replace(/^(?:\s*--[^\n]*\n)+/, ''),
+  )?.[1]?.replaceAll('"', '');
+  if (index) {
+    const existing = await client.query<{ valid: boolean }>(
+      `SELECT i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = $1 AND c.relnamespace = current_schema()::regnamespace`,
+      [index],
+    );
+    if (existing.rows[0] && !existing.rows[0].valid)
+      await client.query(`DROP INDEX CONCURRENTLY IF EXISTS "${index}"`);
+  }
+  await client.query(statement);
+  if (index) {
+    const built = await client.query<{ valid: boolean }>(
+      `SELECT i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = $1 AND c.relnamespace = current_schema()::regnamespace`,
+      [index],
+    );
+    if (!built.rows[0]?.valid)
+      throw new Error(
+        `Index "${index}" is invalid after CREATE INDEX CONCURRENTLY (a UNIQUE build hit duplicates, or it was cancelled)`,
+      );
+  }
 }

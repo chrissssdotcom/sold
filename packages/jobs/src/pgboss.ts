@@ -20,6 +20,11 @@ export interface PgBossQueueOptions {
   /** Connections for this process's queue client. Budgeted separately from the app pool. */
   poolMax?: number;
   pollingIntervalSeconds?: number;
+  /**
+   * Session settings for the queue's own connections. The database-wide defaults (5 s statement timeout) are sized
+   * for request-path queries and would kill pg-boss maintenance on a large backlog, so the queue overrides them.
+   */
+  sessionOptions?: string;
   onError?: (error: Error) => void;
 }
 
@@ -39,6 +44,9 @@ export class PgBossQueue implements JobQueue {
       schema: this.schema,
       max: opts.poolMax ?? 5,
       application_name: 'sold-queue',
+      options:
+        opts.sessionOptions ??
+        '-c statement_timeout=60000 -c lock_timeout=10000 -c idle_in_transaction_session_timeout=60000',
     });
     this.boss.on('error', (error) => opts.onError?.(error));
   }
@@ -57,9 +65,9 @@ export class PgBossQueue implements JobQueue {
     const withDeadLetter = def.deadLetter !== false;
     if (withDeadLetter) {
       // Dead-letter queues keep failed payloads for a long time so they can be inspected and redriven.
-      await this.boss.createQueue(deadLetterName(def.name), { retentionSeconds: 30 * 24 * 3600 });
+      await this.upsertQueue(deadLetterName(def.name), { retentionSeconds: 30 * 24 * 3600 });
     }
-    await this.boss.createQueue(def.name, {
+    await this.upsertQueue(def.name, {
       retryLimit: policy.retryLimit,
       retryDelay: policy.retryDelaySeconds,
       retryBackoff: true,
@@ -67,6 +75,15 @@ export class PgBossQueue implements JobQueue {
       expireInSeconds: policy.expireInSeconds,
       ...(withDeadLetter ? { deadLetter: deadLetterName(def.name) } : {}),
     });
+  }
+
+  /** `createQueue` never changes an existing queue, so policy edits would silently not apply: update when it exists. */
+  private async upsertQueue(
+    name: string,
+    options: Parameters<PgBoss['createQueue']>[1] & object,
+  ): Promise<void> {
+    if (await this.boss.getQueue(name)) await this.boss.updateQueue(name, options);
+    else await this.boss.createQueue(name, options);
   }
 
   async enqueue<T extends object>(
@@ -112,26 +129,39 @@ export class PgBossQueue implements JobQueue {
   }
 
   async health(queue: string): Promise<QueueHealth> {
-    // Depth/active/age are read live and only over unfinished jobs (state < 'completed'), so the
-    // query never scans retained history. pg-boss's own counters are refreshed by a periodic
-    // maintenance pass and can lag, which is unacceptable for an age alert. `failed` uses them.
-    const { rows } = await this.boss.getDb().executeSql(
-      `SELECT count(*) FILTER (WHERE state IN ('created', 'retry'))::int AS depth,
-              count(*) FILTER (WHERE state = 'active')::int AS active,
-              COALESCE(EXTRACT(EPOCH FROM now() - min(created_on)
-                FILTER (WHERE state IN ('created', 'retry') AND start_after <= now())), 0)::float8 AS age
-         FROM ${this.schema}.job
-        WHERE name = $1 AND state < 'completed'`,
-      [queue],
-    );
-    const [stats] = await this.boss.getQueueStats(queue);
-    const row = rows[0] ?? {};
+    const def = this.definitions.get(queue);
+    const [own, dead] = await Promise.all([
+      this.unfinished(queue),
+      def && def.deadLetter !== false
+        ? this.unfinished(deadLetterName(queue))
+        : Promise.resolve({ depth: 0, age: 0 }),
+    ]);
     return {
       name: queue,
-      depth: Number(row.depth ?? 0),
-      active: Number(row.active ?? 0),
-      failed: stats?.failedCount ?? 0,
-      oldestAgeSeconds: Math.max(0, Math.round(Number(row.age ?? 0))),
+      depth: own.depth,
+      oldestAgeSeconds: own.age,
+      deadLetterDepth: dead.depth,
+    };
+  }
+
+  /**
+   * Depth and oldest-ready age of unfinished jobs. The predicate (`state < 'active' AND NOT blocked`) is exactly
+   * that of pg-boss's partial index `job_common_i11`, so this is an index-only scan over the backlog and never
+   * touches the (much larger) history of completed jobs. Verified with EXPLAIN in the integration tests.
+   * pg-boss's own counters are refreshed by a periodic maintenance pass and can lag, which is unacceptable for
+   * an age alert.
+   */
+  private async unfinished(queue: string): Promise<{ depth: number; age: number }> {
+    const { rows } = await this.boss.getDb().executeSql(
+      `SELECT count(*)::int AS depth,
+              COALESCE(EXTRACT(EPOCH FROM now() - min(created_on) FILTER (WHERE start_after <= now())), 0)::float8 AS age
+         FROM ${this.schema}.job
+        WHERE name = $1 AND state < 'active' AND NOT blocked`,
+      [queue],
+    );
+    return {
+      depth: Number(rows[0]?.depth ?? 0),
+      age: Math.max(0, Math.round(Number(rows[0]?.age ?? 0))),
     };
   }
 

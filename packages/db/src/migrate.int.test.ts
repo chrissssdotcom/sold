@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -28,10 +28,11 @@ afterAll(async () => {
 describe('migrations on an empty database', () => {
   it('applies every migration, then is a no-op on rerun', async () => {
     const first = await migrate({ url: testDb.url, dir: migrationsDir });
-    expect(first.applied).toEqual(['0000_init.sql']);
+    const all = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort();
+    expect(first.applied).toEqual(all);
     const second = await migrate({ url: testDb.url, dir: migrationsDir });
     expect(second.applied).toEqual([]);
-    expect(second.skipped).toEqual(['0000_init.sql']);
+    expect(second.skipped).toEqual(all);
     db = createDb({ primaryUrl: testDb.url });
   });
 
@@ -214,22 +215,11 @@ describe('outbox partitioning', () => {
     expect(routed.rows[0]?.tableoid).not.toBe('outbox_events_default');
   });
 
-  it('ensure is idempotent and retention drops only expired partitions', async () => {
+  it('ensure is idempotent', async () => {
     const again = await db.pools.primary.query<{ n: number }>(
       `SELECT sold_ensure_monthly_partitions('outbox_events', 3) AS n`,
     );
     expect(again.rows[0]?.n).toBe(0);
-    await db.pools.primary.query(
-      `CREATE TABLE outbox_events_202001 PARTITION OF outbox_events FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')`,
-    );
-    const dropped = await db.pools.primary.query<{ n: number }>(
-      `SELECT sold_drop_old_partitions('outbox_events', 3) AS n`,
-    );
-    expect(dropped.rows[0]?.n).toBe(1);
-    const left = await db.pools.primary.query(
-      `SELECT 1 FROM pg_inherits WHERE inhparent = 'outbox_events'::regclass`,
-    );
-    expect(left.rowCount).toBe(5);
   });
 
   it('uses the partial index for the publisher poll (EXPLAIN)', async () => {
@@ -329,7 +319,7 @@ describe('FeatureFlags', () => {
 });
 
 describe('maintainOutboxPartitions', () => {
-  it('drops expired partitions only when nothing in them is unpublished', async () => {
+  it('retires expired partitions, but never one holding unpublished events', async () => {
     const { maintainOutboxPartitions } = await import('./maintenance');
     await db.pools.primary.query(
       `CREATE TABLE outbox_events_202101 PARTITION OF outbox_events FOR VALUES FROM ('2021-01-01') TO ('2021-02-01')`,
@@ -339,7 +329,15 @@ describe('maintainOutboxPartitions', () => {
        VALUES ('order', 'old-published', 'order.placed', '{}', '2021-01-15', '2021-01-15')`,
     );
     const ok = await maintainOutboxPartitions(db.primary);
-    expect(ok).toMatchObject({ blocked: false, dropped: 1 });
+    expect(ok).toMatchObject({
+      blocked: false,
+      dropped: 1,
+      defaultPartitionRows: 0,
+      createError: null,
+    });
+    expect(
+      (await db.pools.primary.query(`SELECT to_regclass('outbox_events_202101') AS t`)).rows[0]?.t,
+    ).toBeNull();
 
     await db.pools.primary.query(
       `CREATE TABLE outbox_events_202102 PARTITION OF outbox_events FOR VALUES FROM ('2021-02-01') TO ('2021-03-01')`,
@@ -350,7 +348,140 @@ describe('maintainOutboxPartitions', () => {
     );
     const blocked = await maintainOutboxPartitions(db.primary);
     expect(blocked).toMatchObject({ blocked: true, dropped: 0, unpublishedBeyondRetention: 1 });
-    const still = await db.pools.primary.query(`SELECT to_regclass('outbox_events_202102') AS t`);
-    expect(still.rows[0]?.t).not.toBeNull();
+    expect(
+      (await db.pools.primary.query(`SELECT to_regclass('outbox_events_202102') AS t`)).rows[0]?.t,
+    ).not.toBeNull();
+  });
+
+  it('does not block writers to the hot parent while retiring a partition', async () => {
+    const { maintainOutboxPartitions } = await import('./maintenance');
+    await db.pools.primary.query(
+      `CREATE TABLE outbox_events_202103 PARTITION OF outbox_events FOR VALUES FROM ('2021-03-01') TO ('2021-04-01')`,
+    );
+    await db.pools.primary.query(
+      `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload, created_at, published_at)
+       SELECT 'order', g::text, 'x', '{}', '2021-03-10', '2021-03-10' FROM generate_series(1, 20000) g`,
+    );
+    // Writers hammer the parent while retention runs; none may wait anywhere near the 2 s lock_timeout.
+    let stop = false;
+    let worst = 0;
+    const writer = (async () => {
+      while (!stop) {
+        const t = performance.now();
+        await db.pools.primary.query(
+          `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload) VALUES ('order', 'w', 'x', '{}')`,
+        );
+        worst = Math.max(worst, performance.now() - t);
+      }
+    })();
+    const res = await maintainOutboxPartitions(db.primary);
+    stop = true;
+    await writer;
+    expect(res.dropped + res.deferred).toBe(1);
+    expect(worst).toBeLessThan(700);
+  });
+
+  it('reports rows stranded in the default partition and a partition that cannot be created', async () => {
+    const { maintainOutboxPartitions } = await import('./maintenance');
+    const future = await db.pools.primary.query<{ d: string }>(
+      `SELECT (date_trunc('month', now()) + interval '2 years')::date::text AS d`,
+    );
+    const day = future.rows[0]?.d as string;
+    // A row far in the future lands in the default partition (no partition covers it).
+    await db.pools.primary.query(
+      `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload, created_at) VALUES ('order', 'strand', 'x', '{}', $1)`,
+      [day],
+    );
+    const res = await maintainOutboxPartitions(db.primary);
+    expect(res.defaultPartitionRows).toBeGreaterThanOrEqual(1);
+    await db.pools.primary.query(`DELETE FROM outbox_events_default`);
+  });
+});
+
+describe('migration runner hardening', () => {
+  async function withDir<T>(
+    files: Record<string, string>,
+    fn: (dir: string) => Promise<T>,
+  ): Promise<T> {
+    const dir = await mkdtemp(join(tmpdir(), 'sold-mig-'));
+    try {
+      for (const [name, sql] of Object.entries(files)) await writeFile(join(dir, name), sql);
+      return await fn(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('a second runner waits for the first even when the migration outlasts lock_timeout', async () => {
+    await withDir(
+      { '0001_slow.sql': 'CREATE TABLE slow_mig (id int);\nSELECT pg_sleep(1.5);' },
+      async (dir) => {
+        const opts = {
+          url: testDb.url,
+          dir,
+          scope: 'test-wait',
+          lockTimeoutMs: 300,
+          runnerLockWaitMs: 20_000,
+        };
+        const results = await Promise.all([migrate(opts), migrate(opts)]);
+        expect(results.flatMap((r) => r.applied)).toEqual(['0001_slow.sql']);
+      },
+    );
+  });
+
+  it('gives up with a clear error if the runner lock is held past the wait budget', async () => {
+    const holder = new Client({ connectionString: testDb.url });
+    await holder.connect();
+    await holder.query('SELECT pg_advisory_lock(7265034211)');
+    try {
+      await withDir({ '0001_x.sql': 'SELECT 1;' }, async (dir) => {
+        await expect(
+          migrate({ url: testDb.url, dir, scope: 'test-held', runnerLockWaitMs: 400 }),
+        ).rejects.toThrow(/held the lock for more than 400 ms/);
+      });
+    } finally {
+      await holder.end();
+    }
+  });
+
+  it('recovers from an INVALID leftover index instead of journaling a broken one', async () => {
+    await db.pools.primary.query(`CREATE TABLE inv_t (v int)`);
+    await db.pools.primary.query(`INSERT INTO inv_t VALUES (1), (1)`);
+    await withDir(
+      {
+        '0001_uniq.sql':
+          '-- sold:no-transaction\nCREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS inv_t_v_uniq ON inv_t (v);',
+      },
+      async (dir) => {
+        // Duplicates make the concurrent UNIQUE build fail and leave an invalid index behind.
+        await expect(migrate({ url: testDb.url, dir, scope: 'test-inv' })).rejects.toThrow();
+        const left = await db.pools.primary.query(
+          `SELECT indisvalid FROM pg_index WHERE indexrelid = 'inv_t_v_uniq'::regclass`,
+        );
+        expect(left.rows[0]?.indisvalid).toBe(false);
+        // Not journaled, so a rerun is possible; once the data is fixed it must rebuild a VALID index.
+        await db.pools.primary.query(
+          `DELETE FROM inv_t WHERE ctid IN (SELECT ctid FROM inv_t LIMIT 1)`,
+        );
+        await migrate({ url: testDb.url, dir, scope: 'test-inv' });
+        const fixed = await db.pools.primary.query(
+          `SELECT indisvalid FROM pg_index WHERE indexrelid = 'inv_t_v_uniq'::regclass`,
+        );
+        expect(fixed.rows[0]?.indisvalid).toBe(true);
+      },
+    );
+  });
+
+  it('never rewrites a string literal that merely contains the breakpoint marker', async () => {
+    await withDir(
+      {
+        '0001_lit.sql': `CREATE TABLE lit_t (s text);\nINSERT INTO lit_t VALUES ('a --> statement-breakpoint b');`,
+      },
+      async (dir) => {
+        await migrate({ url: testDb.url, dir, scope: 'test-lit' });
+        const r = await db.pools.primary.query(`SELECT s FROM lit_t`);
+        expect(r.rows[0]?.s).toBe('a --> statement-breakpoint b');
+      },
+    );
   });
 });

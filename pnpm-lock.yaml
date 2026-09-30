@@ -269,6 +269,9 @@ importers:
       '@sold/config':
         specifier: workspace:*
         version: link:../config
+      '@sold/db':
+        specifier: workspace:*
+        version: link:../db
       '@sold/testing':
         specifier: workspace:*
         version: link:../testing
