@@ -1,11 +1,11 @@
 {
-  "name": "@sold/commerce",
+  "name": "@sold/payments",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/test-support.ts"
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,15 +14,14 @@
     "test:integration": "vitest run --project integration"
   },
   "dependencies": {
+    "@sold/commerce": "workspace:*",
     "@sold/core": "workspace:*",
     "@sold/db": "workspace:*",
-    "zod": "^4.6.5",
-    "@sold/extension-sdk": "workspace:*"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@sold/config": "workspace:*",
     "@sold/testing": "workspace:*",
-    "ioredis": "^6.0.0",
     "vitest": "^5.0.3"
   }
 }
