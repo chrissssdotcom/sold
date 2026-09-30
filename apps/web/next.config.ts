@@ -20,9 +20,12 @@ export const securityHeaders = [
 
 /** A production build without the shared handler would silently fall back to a per-instance cache: refuse. */
 function handlerConfig(): Partial<NextConfig> {
-  if (existsSync(cacheHandlerPath)) return { cacheHandler: cacheHandlerPath, cacheMaxMemorySize: 0 };
+  if (existsSync(cacheHandlerPath))
+    return { cacheHandler: cacheHandlerPath, cacheMaxMemorySize: 0 };
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('Shared cache handler bundle missing: run `node scripts/build.mjs` (pnpm build does this in prebuild).');
+    throw new Error(
+      'Shared cache handler bundle missing: run `node scripts/build.mjs` (pnpm build does this in prebuild).',
+    );
   }
   return {};
 }

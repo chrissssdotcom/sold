@@ -72,7 +72,11 @@ describe('cachedReadiness', () => {
   it('runs dependency checks at most once per TTL and shares in-flight checks', async () => {
     let calls = 0;
     let t = 0;
-    const check = cachedReadiness({ isDraining: () => false, checkPrimary: async () => void calls++ }, 1_000, () => t);
+    const check = cachedReadiness(
+      { isDraining: () => false, checkPrimary: async () => void calls++ },
+      1_000,
+      () => t,
+    );
     await Promise.all(Array.from({ length: 50 }, () => check()));
     await check();
     expect(calls).toBe(1);
@@ -83,14 +87,28 @@ describe('cachedReadiness', () => {
 
   it('caches failures briefly so a struggling primary is not hammered', async () => {
     let calls = 0;
-    const check = cachedReadiness({ isDraining: () => false, checkPrimary: async () => { calls++; throw new Error('down'); } }, 1_000, () => 0);
+    const check = cachedReadiness(
+      {
+        isDraining: () => false,
+        checkPrimary: async () => {
+          calls++;
+          throw new Error('down');
+        },
+      },
+      1_000,
+      () => 0,
+    );
     for (let i = 0; i < 20; i++) expect((await check()).status).toBe('unavailable');
     expect(calls).toBe(1);
   });
 
   it('reflects draining immediately, without waiting for the cache', async () => {
     let draining = false;
-    const check = cachedReadiness({ isDraining: () => draining, checkPrimary: async () => undefined }, 60_000, () => 0);
+    const check = cachedReadiness(
+      { isDraining: () => draining, checkPrimary: async () => undefined },
+      60_000,
+      () => 0,
+    );
     expect((await check()).status).toBe('ok');
     draining = true;
     const res = await check();

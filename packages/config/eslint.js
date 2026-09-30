@@ -7,7 +7,17 @@ import globals from 'globals';
  * `@sold/extension-sdk` (and third-party libraries). Every workspace package other than the SDK is off limits,
  * as is reaching into another package by path.
  */
-export const baseInternalPackages = ['core', 'db', 'ui', 'identity', 'payments', 'testing', 'jobs', 'cli', 'config'];
+export const baseInternalPackages = [
+  'core',
+  'db',
+  'ui',
+  'identity',
+  'payments',
+  'testing',
+  'jobs',
+  'cli',
+  'config',
+];
 
 export const baseInternalPatterns = [
   ...baseInternalPackages.flatMap((p) => [`@sold/${p}`, `@sold/${p}/*`]),
@@ -57,14 +67,25 @@ export const extensionBoundary = {
   rules: {
     'no-restricted-imports': [
       'error',
-      { patterns: baseInternalPatterns.map((group) => ({ group: [group], message: boundaryMessage })) },
+      {
+        patterns: baseInternalPatterns.map((group) => ({
+          group: [group],
+          message: boundaryMessage,
+        })),
+      },
     ],
     'no-restricted-syntax': [
       'error',
       ...[internalRegex, pathRegex].flatMap((re) => [
         { selector: `ImportExpression > Literal[value=/${re}/]`, message: boundaryMessage },
-        { selector: `CallExpression[callee.name='require'] > Literal[value=/${re}/]`, message: boundaryMessage },
-        { selector: `TSImportType > TSLiteralType > Literal[value=/${re}/]`, message: boundaryMessage },
+        {
+          selector: `CallExpression[callee.name='require'] > Literal[value=/${re}/]`,
+          message: boundaryMessage,
+        },
+        {
+          selector: `TSImportType > TSLiteralType > Literal[value=/${re}/]`,
+          message: boundaryMessage,
+        },
       ]),
     ],
   },

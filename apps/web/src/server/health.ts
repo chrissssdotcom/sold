@@ -70,11 +70,21 @@ type ReadinessResult = Awaited<ReturnType<typeof evaluateReadiness>>;
  * failure is cached briefly too (so a struggling primary is not hammered by probes). Draining is always
  * evaluated live, so a SIGTERM takes effect immediately.
  */
-export function cachedReadiness(deps: HealthDeps, ttlMs = 1_000, now: () => number = Date.now): () => Promise<ReadinessResult> {
+export function cachedReadiness(
+  deps: HealthDeps,
+  ttlMs = 1_000,
+  now: () => number = Date.now,
+): () => Promise<ReadinessResult> {
   let cached: { at: number; result: ReadinessResult } | undefined;
   let inFlight: Promise<ReadinessResult> | undefined;
   return async () => {
-    if (deps.isDraining()) return evaluateReadiness({ ...deps, checkPrimary: async () => undefined, checkReplica: undefined, checkRedis: undefined });
+    if (deps.isDraining())
+      return evaluateReadiness({
+        ...deps,
+        checkPrimary: async () => undefined,
+        checkReplica: undefined,
+        checkRedis: undefined,
+      });
     if (cached && now() - cached.at < ttlMs) return cached.result;
     inFlight ??= evaluateReadiness(deps)
       .then((result) => {

@@ -247,13 +247,18 @@ describe('InterceptorRunner', () => {
 
   it('fails fast when the bounded pool is saturated', async () => {
     const pool = new Semaphore('tiny', 1, 0);
-    const hold: Partial<CartInterceptor> = {
-      timeoutMs: 20,
-      handler: () => new Promise((res) => setTimeout(res, 15)),
-    };
-    const { r, metrics } = runner([loaded('holder', 0, [hold])], { pool });
-    await Promise.all([r.run('cart.item.adding', payload), r.run('cart.item.adding', payload)]);
-    expect(metrics.map((m) => m.outcome).sort()).toEqual(['ok', 'saturated']);
+    // Deterministic: the first interceptor holds the only slot until the test releases it (no timing involved).
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const hold: Partial<CartInterceptor> = { timeoutMs: 20, handler: () => gate };
+    const { r, metrics } = runner([loaded('holder', 0, [{ ...hold }], 20)], { pool });
+    const first = r.run('cart.item.adding', payload);
+    while (pool.inFlight === 0) await new Promise((res) => setImmediate(res));
+    const second = await r.run('cart.item.adding', payload); // the slot is taken and the queue has no room
+    expect(metrics.map((m) => m.outcome)).toEqual(['saturated']);
+    expect(second.veto).toBeNull(); // fail-open policy: continue without the extension
+    release();
+    await first;
   });
 
   describe('hot-path guard: no network on the cart/checkout path', () => {

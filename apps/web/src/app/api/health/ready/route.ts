@@ -14,7 +14,9 @@ export const GET = route(async () => {
     checkPrimary: async () => {
       await rt.db.pools.probe.query('SELECT 1');
     },
-    ...(rt.db.hasReplica ? { checkReplica: async () => void (await rt.db.pools.replica.query('SELECT 1')) } : {}),
+    ...(rt.db.hasReplica
+      ? { checkReplica: async () => void (await rt.db.pools.replica.query('SELECT 1')) }
+      : {}),
     ...(rt.redis
       ? {
           checkRedis: async () => {
@@ -25,5 +27,8 @@ export const GET = route(async () => {
       : {}),
   });
   const result = await check();
-  return Response.json(result, { status: result.status === 'unavailable' ? 503 : 200, headers: { 'cache-control': 'no-store' } });
+  return Response.json(result, {
+    status: result.status === 'unavailable' ? 503 : 200,
+    headers: { 'cache-control': 'no-store' },
+  });
 });

@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { lintExtensionStatements, extensionPrefix } from './extension';
+import { lintExtensionStatements } from './extension';
 import { parseMigration, SqlSyntaxError } from './parser';
 import { lintStatements, rules, type Finding } from './rules';
 
