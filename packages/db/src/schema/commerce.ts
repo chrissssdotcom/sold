@@ -69,6 +69,8 @@ export const variantPrices = pgTable(
     currency: char('currency', { length: 3 }).notNull(),
     amount: minor('amount').notNull(),
     compareAt: minor('compare_at'),
+    /** `manual` prices are set by an operator; `derived` ones are recomputed from the base currency on FX refresh. */
+    source: text('source').notNull().default('manual'),
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.variantId, t.currency] })],
