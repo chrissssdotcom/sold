@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --project unit",
-    "predev": "node scripts/build-cache-handler.mjs",
-    "prebuild": "node scripts/build-cache-handler.mjs",
-    "test:integration": "vitest run --project integration"
+    "predev": "node scripts/build.mjs",
+    "prebuild": "node scripts/build.mjs",
+    "test:integration": "vitest run --project integration",
+    "worker": "node scripts/build.mjs && node .generated/worker.cjs"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -22,6 +23,7 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sold/core": "workspace:*",
     "@sold/db": "workspace:*",
+    "@sold/jobs": "workspace:*",
     "ioredis": "^6.0.0",
     "next": "^16.3.7",
     "prom-client": "^15.1.3",

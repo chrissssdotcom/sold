@@ -303,3 +303,54 @@ describe('seed', () => {
     expect(count.rows[0]?.n).toBe('5');
   });
 });
+
+describe('FeatureFlags', () => {
+  it('reads flags, caches within the TTL, and keeps the last value if the DB fails', async () => {
+    const { FeatureFlags } = await import('./flags');
+    let t = 0;
+    const flags = new FeatureFlags(db.replica, 1_000, () => t);
+    await db.pools.primary.query(
+      `INSERT INTO feature_flags (key, enabled) VALUES ('t.flag', true) ON CONFLICT (key) DO UPDATE SET enabled = true`,
+    );
+    expect(await flags.isEnabled('t.flag')).toBe(true);
+    await db.pools.primary.query(`UPDATE feature_flags SET enabled = false WHERE key = 't.flag'`);
+    expect(await flags.isEnabled('t.flag')).toBe(true); // cached
+    t = 1_001;
+    expect(await flags.isEnabled('t.flag')).toBe(false); // refreshed
+    expect(await flags.isEnabled('t.missing', true)).toBe(true); // fallback
+    const broken = createDb({ primaryUrl: 'postgres://sold:sold@127.0.0.1:1/none' });
+    try {
+      const failing = new FeatureFlags(broken.replica, 1, () => t);
+      expect(await failing.isEnabled('t.flag', true)).toBe(true);
+    } finally {
+      await broken.close();
+    }
+  });
+});
+
+describe('maintainOutboxPartitions', () => {
+  it('drops expired partitions only when nothing in them is unpublished', async () => {
+    const { maintainOutboxPartitions } = await import('./maintenance');
+    await db.pools.primary.query(
+      `CREATE TABLE outbox_events_202101 PARTITION OF outbox_events FOR VALUES FROM ('2021-01-01') TO ('2021-02-01')`,
+    );
+    await db.pools.primary.query(
+      `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload, created_at, published_at)
+       VALUES ('order', 'old-published', 'order.placed', '{}', '2021-01-15', '2021-01-15')`,
+    );
+    const ok = await maintainOutboxPartitions(db.primary);
+    expect(ok).toMatchObject({ blocked: false, dropped: 1 });
+
+    await db.pools.primary.query(
+      `CREATE TABLE outbox_events_202102 PARTITION OF outbox_events FOR VALUES FROM ('2021-02-01') TO ('2021-03-01')`,
+    );
+    await db.pools.primary.query(
+      `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload, created_at)
+       VALUES ('order', 'old-unpublished', 'order.placed', '{}', '2021-02-15')`,
+    );
+    const blocked = await maintainOutboxPartitions(db.primary);
+    expect(blocked).toMatchObject({ blocked: true, dropped: 0, unpublishedBeyondRetention: 1 });
+    const still = await db.pools.primary.query(`SELECT to_regclass('outbox_events_202102') AS t`);
+    expect(still.rows[0]?.t).not.toBeNull();
+  });
+});
