@@ -2,6 +2,7 @@ import { resolveRequestId } from '@sold/core/observability';
 import { routeClassOf, shouldShed } from '@sold/core/traffic';
 import type { Logger } from '@sold/core/observability';
 import { getRuntime } from './runtime';
+import { isDependencyUnavailable } from './availability';
 import { currentShedBelow, isShedExempt } from './shedding';
 
 export interface RouteContext {
@@ -43,8 +44,23 @@ export function route(handler: Handler): (request: Request) => Promise<Response>
         );
       } else response = await handler(request, { requestId, log });
     } catch (error) {
-      log.error({ err: error }, 'unhandled error in route handler');
-      response = Response.json({ error: { code: 'internal_error', requestId } }, { status: 500 });
+      if (isDependencyUnavailable(error)) {
+        // A dependency (almost always the database) is unreachable: say so, and tell clients when to retry. Not our bug, so not a 500.
+        log.warn({ err: error }, 'dependency unavailable');
+        response = Response.json(
+          {
+            error: {
+              code: 'unavailable',
+              message: 'Temporarily unavailable, please retry',
+              requestId,
+            },
+          },
+          { status: 503, headers: { 'retry-after': '5', 'cache-control': 'no-store' } },
+        );
+      } else {
+        log.error({ err: error }, 'unhandled error in route handler');
+        response = Response.json({ error: { code: 'internal_error', requestId } }, { status: 500 });
+      }
     }
     const seconds = (performance.now() - started) / 1000;
     if (routeClass !== 'internal') {

@@ -15,11 +15,14 @@ interface PgQuery {
   parseSync(sql: string): RawParse;
 }
 
-const require = createRequire(import.meta.url);
 let loaded: Promise<PgQuery> | undefined;
 
 async function parser(): Promise<PgQuery> {
   loaded ??= (async () => {
+    // Created lazily, not at import: this module is imported (via `@sold/db`) by the worker's single-file CJS bundle, where esbuild
+    // turns `import.meta.url` into `undefined` and a top-level `createRequire(undefined)` would crash the worker at boot.
+    // Only tooling (CLI, tests) ever parses, and there `import.meta.url` exists.
+    const require = createRequire(import.meta.url);
     const pq = require('@libpg-query/parser') as PgQuery;
     await pq.loadModule();
     return pq;

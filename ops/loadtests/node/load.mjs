@@ -73,10 +73,10 @@ async function catalog() {
 function browser(handles) {
   const pick = () => handles[Math.floor(Math.random() * handles.length)];
   const steps = [
-    () => `/en-au`,
-    () => `/en-au/products/${pick()}`,
-    () => `/api/catalog/products?limit=20`,
-    () => `/api/catalog/products/${pick()}`,
+    () => ({ label: 'page:home', path: `/en-au` }),
+    () => ({ label: 'page:product', path: `/en-au/products/${pick()}` }),
+    () => ({ label: 'api:list', path: `/api/catalog/products?limit=20` }),
+    () => ({ label: 'api:product', path: `/api/catalog/products/${pick()}` }),
   ];
   let i = Math.floor(Math.random() * steps.length);
   return () => steps[i++ % steps.length]();
@@ -85,8 +85,9 @@ function browser(handles) {
 async function worker(handles, until, sink, stopped = () => false) {
   const next = browser(handles);
   while (performance.now() < until && !stopped()) {
-    const { ms, status } = await timed(base + next());
-    sink.push({ ms, status, at: performance.now() });
+    const step = next();
+    const { ms, status } = await timed(base + step.path);
+    sink.push({ ms, status, at: performance.now(), label: step.label });
   }
 }
 
@@ -96,7 +97,21 @@ async function runBrowse() {
   const t0 = performance.now();
   const until = t0 + num('seconds') * 1000;
   await Promise.all(Array.from({ length: num('workers') }, () => worker(handles, until, sink)));
-  return { ...summarize(sink, (performance.now() - t0) / 1000), workers: num('workers') };
+  const secs = (performance.now() - t0) / 1000;
+  const byRoute = {};
+  for (const label of new Set(sink.map((x) => x.label)))
+    byRoute[label] = summarize(
+      sink.filter((x) => x.label === label),
+      secs,
+    );
+  // Timeline in 5 s windows, so a fault injected mid-run is visible (see ops/drills/chaos-redis.sh).
+  const windows = [];
+  for (let from = 0; from < secs; from += 5) {
+    const inWin = sink.filter((x) => (x.at - t0) / 1000 >= from && (x.at - t0) / 1000 < from + 5);
+    const w = summarize(inWin, 5);
+    windows.push({ t: from, rps: w.rps, p95: w.p95, errorRate: w.errorRate, statuses: w.statuses });
+  }
+  return { ...summarize(sink, secs), workers: num('workers'), byRoute, windows };
 }
 
 async function runSpike() {
@@ -195,12 +210,18 @@ async function runCheckoutStorm() {
     password: a['owner-password'],
   });
   if (login.status !== 200) throw new Error(`owner login failed: ${login.status}`);
-  const list = await (await fetch(`${base}/api/catalog/products?limit=1`)).json();
-  const detail = await (await fetch(`${base}/api/catalog/products/${list.items[0].handle}`)).json();
-  const variantId = detail.variants[0].id;
+  // A fresh product per run, so earlier runs' reservations cannot skew the count (and the verdict can be exact).
   const stock = num('stock');
-  const set = await owner.call('PUT', `/api/admin/variants/${variantId}/stock`, { onHand: stock });
-  if (set.status !== 200) throw new Error(`could not set stock: ${set.status}`);
+  const tag = crypto.randomUUID().slice(0, 8);
+  const created = await owner.call('POST', '/api/admin/products', {
+    handle: `loadtest-${tag}`,
+    title: `Load test ${tag}`,
+    status: 'active',
+    variants: [{ sku: `LT-${tag}`, prices: [{ currency: 'AUD', amount: '1999' }], onHand: stock }],
+  });
+  if (created.status !== 201)
+    throw new Error(`could not create the test product: ${created.status}`);
+  const variantId = created.body.variants[0].id;
 
   const outcomes = { placed: 0, soldOut: 0, other4xx: 0, serverError: 0, networkError: 0 };
   const lat = [];
@@ -238,7 +259,11 @@ async function runCheckoutStorm() {
   lat.sort((x, y) => x - y);
   const verdict = {
     oversold: Math.max(0, outcomes.placed - stock),
-    ok: outcomes.placed <= stock && outcomes.serverError === 0 && outcomes.networkError === 0,
+    // Exact on a fresh SKU: every unit sells once buyers >= stock, and none twice.
+    ok:
+      outcomes.placed === Math.min(num('buyers'), stock) &&
+      outcomes.serverError === 0 &&
+      outcomes.networkError === 0,
   };
   return {
     buyers: num('buyers'),

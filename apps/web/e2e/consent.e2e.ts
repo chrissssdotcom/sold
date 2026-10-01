@@ -65,6 +65,12 @@ const settle = (page: Page) => page.waitForTimeout(1500);
 
 run('cookie consent and the TikTok pixel', () => {
   beforeAll(async () => {
+    // The pixel is a third-party script: the server's CSP must allow it (operator opt-in, ADR-0005).
+    const csp = (await fetch(`${base}/en-au`)).headers.get('content-security-policy');
+    if (csp && !csp.includes('https://analytics.tiktok.com'))
+      throw new Error(
+        'Start the server with SOLD_CSP_SCRIPT_HOSTS=https://analytics.tiktok.com (and SOLD_CSP_CONNECT_HOSTS, SOLD_CSP_FRAME_HOSTS=https://www.tiktok.com) for this spec',
+      );
     browser = await chromium.launch({
       executablePath:
         process.env['SOLD_E2E_CHROMIUM'] ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
