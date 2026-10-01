@@ -438,12 +438,19 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
     .option('--upstream <remote>', 'git remote that carries Base tags', 'upstream')
     .option('--no-fetch')
     .option('--no-commit', 'leave the changes staged instead of committing')
+    .option('--no-install', 'do not run pnpm install after replacing Base files')
     .action(
       action(
         async (
           context,
           version: string,
-          options: { patchOnly?: boolean; upstream?: string; fetch?: boolean; commit?: boolean },
+          options: {
+            patchOnly?: boolean;
+            upstream?: string;
+            fetch?: boolean;
+            commit?: boolean;
+            install?: boolean;
+          },
         ) => {
           await upgradePlan(context, new Git(context.runner, context.cwd), {
             version,
@@ -451,6 +458,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
             ...(options.upstream ? { upstream: options.upstream } : {}),
             fetch: options.fetch !== false,
             noCommit: options.commit === false,
+            noInstall: options.install === false,
           });
         },
       ),

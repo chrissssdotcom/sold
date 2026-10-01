@@ -28,6 +28,8 @@ export interface UpgradePlanOptions {
   fetch?: boolean;
   /** Do not commit; leave the changes staged for inspection. */
   noCommit?: boolean;
+  /** Skip the dependency install that follows replacing Base files (default: install). */
+  noInstall?: boolean;
 }
 
 export interface UpgradePlanResult {
@@ -152,6 +154,7 @@ export async function upgradePlan(
       `[dry-run] take upstream (${tag}) for ${upstreamFiles.length} Base-owned file(s); remove ${removed.length} retired file(s)`,
     );
     ctx.out.info(`[dry-run] write ${BASE_VERSION_PATH} = ${to}`);
+    if (!options.noInstall) ctx.out.info('[dry-run] run: pnpm install --no-frozen-lockfile');
     for (const c of codemodPlan) ctx.out.info(`[dry-run] run codemod ${c.file}`);
     ctx.out.info(`[dry-run] write ${reportPath}`);
     ctx.out.info(`[dry-run] git add -A && git commit -m "chore(upgrade): base v${to}"`);
@@ -181,6 +184,22 @@ export async function upgradePlan(
     for (const files of chunk(removed, 100))
       await requireGit(git, ['rm', '-q', '--ignore-unmatch', '--', ...files]);
     await writeFile(join(ctx.cwd, BASE_VERSION_PATH), `${to}\n`);
+
+    // The release brought new packages and dependencies. Without installing them the CLI itself cannot start again (it imports workspace
+    // sources), so `upgrade:apply` would die before its own install step. Found by rehearsing against a tagged upstream.
+    // Not frozen: the lockfile is regenerated for the new Base files plus this instance's extensions; `upgrade:apply` commits it.
+    if (!options.noInstall) {
+      ctx.out.info('installing dependencies for the new Base files');
+      const install = await ctx.runner.run('pnpm', ['install', '--no-frozen-lockfile'], {
+        cwd: ctx.cwd,
+        stream: true,
+      });
+      if (install.code !== 0) {
+        throw new CliError(
+          `pnpm install failed (exit ${install.code}). The branch ${branch} is left uncommitted for inspection.\n${(install.stderr || install.stdout).trim().split('\n').slice(-6).join('\n')}`,
+        );
+      }
+    }
 
     const codemodsRun: string[] = [];
     for (const codemod of codemodPlan) {

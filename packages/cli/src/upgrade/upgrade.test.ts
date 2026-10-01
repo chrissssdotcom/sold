@@ -157,7 +157,9 @@ describe('upgrade:plan', () => {
       'upgrades/1.1.0/001-rename.ts',
       'upgrades/1.1.0/002-config.ts',
     ]);
-    const codemodCalls = ctx.runner.calls.filter((c) => c.command === 'pnpm');
+    const codemodCalls = ctx.runner.calls.filter(
+      (c) => c.command === 'pnpm' && c.args[0] === 'exec',
+    );
     expect(codemodCalls.map((c) => c.args.join(' '))).toEqual([
       'exec tsx upgrades/1.1.0/001-rename.ts',
       'exec tsx upgrades/1.1.0/002-config.ts',
@@ -246,6 +248,26 @@ describe('upgrade:plan', () => {
     expect(ctx.out.warnings.join('\n')).toContain('upgrade preparation failed');
   });
 
+  it('installs the new Base dependencies BEFORE running codemods (the CLI cannot restart on stale node_modules)', async () => {
+    await upgradePlan(ctx, repo, { version: '1.1.0' });
+    const pnpm = ctx.runner.calls.filter((c) => c.command === 'pnpm').map((c) => c.args.join(' '));
+    expect(pnpm[0]).toBe('install --no-frozen-lockfile');
+    expect(pnpm.slice(1).every((a) => a.startsWith('exec tsx upgrades/'))).toBe(true);
+  });
+
+  it('--no-install skips the install', async () => {
+    await upgradePlan(ctx, repo, { version: '1.1.0', noInstall: true });
+    expect(ctx.runner.calls.some((c) => c.args[0] === 'install')).toBe(false);
+  });
+
+  it('a failing install leaves the branch uncommitted and says so', async () => {
+    ctx.runner.on('pnpm install', { code: 1, stderr: 'ERR_PNPM_FETCH_404 registry unreachable' });
+    await expect(upgradePlan(ctx, repo, { version: '1.1.0' })).rejects.toThrow(
+      /pnpm install failed[\s\S]*registry unreachable/,
+    );
+    expect(git(fx.instance, 'log', '-1', '--format=%s')).toBe('instance setup');
+  });
+
   it('--dry-run prints the plan and changes nothing', async () => {
     const dry = makeContext({ cwd: fx.instance, runner: ctx.runner, dryRun: true });
     const result = await upgradePlan(dry, repo, { version: '1.1.0' });
@@ -256,6 +278,7 @@ describe('upgrade:plan', () => {
     expect(ctx.runner.calls.filter((c) => c.command === 'pnpm')).toHaveLength(0);
     const text = dry.out.lines.join('\n');
     expect(text).toContain('[dry-run] git checkout -b upgrade/base-v1.1.0');
+    expect(text).toContain('[dry-run] run: pnpm install --no-frozen-lockfile');
     expect(text).toContain('[dry-run] run codemod upgrades/1.1.0/001-rename.ts');
     expect(text).toContain('[dry-run] write docs/instance/upgrades/1.1.0.md');
   });
