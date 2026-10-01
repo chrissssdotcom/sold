@@ -10,6 +10,16 @@ const ownerEmail = process.env['SOLD_E2E_OWNER_EMAIL'];
 const ownerPassword = process.env['SOLD_E2E_OWNER_PASSWORD'];
 const run = base && ownerEmail && ownerPassword ? describe : describe.skip;
 
+/** Read a dotted path out of a JSON response without trusting its shape. */
+function at(value: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>(
+      (v, k) => (v === null || v === undefined ? undefined : (v as Record<string, unknown>)[k]),
+      value,
+    );
+}
+
 class Client {
   cookie = '';
   async call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
@@ -31,7 +41,7 @@ class Client {
       else this.cookie = pair;
     }
     const text = await res.text();
-    return { status: res.status, body: text ? (JSON.parse(text) as Record<string, any>) : {} };
+    return { status: res.status, body: (text ? JSON.parse(text) : {}) as unknown };
   }
   async login(email: string, password: string) {
     const r = await this.call('POST', '/api/admin/auth/login', { email, password });
@@ -92,7 +102,7 @@ run('admin API', () => {
       { origin: 'https://evil.example' },
     );
     expect(forged.status).toBe(403);
-    expect(forged.body['error']?.code).toBe('csrf_rejected');
+    expect(at(forged.body, 'error.code')).toBe('csrf_rejected');
   });
 
   it('enforces the permission matrix', async () => {
@@ -117,20 +127,23 @@ run('admin API', () => {
     };
     const created = await publisher.call('POST', '/api/admin/products', draft);
     expect(created.status).toBe(201);
-    productId = created.body['id'];
-    variantId = created.body['variants'][0].id;
+    productId = at(created.body, 'id') as string;
+    variantId = at(created.body, 'variants.0.id') as string;
     const live = await publisher.call('PATCH', `/api/admin/products/${productId}`, {
       status: 'active',
     });
     expect(live.status).toBe(403);
-    expect(live.body['error']?.details?.permission).toBe('catalog:publish');
+    expect(at(live.body, 'error.details.permission')).toBe('catalog:publish');
     expect(
       (await owner.call('PATCH', `/api/admin/products/${productId}`, { status: 'active' })).status,
     ).toBe(200);
     expect(
       (await publisher.call('POST', '/api/admin/products', { ...draft, status: 'active' })).status,
     ).toBe(403);
-    expect((await owner.call('GET', `/api/admin/products?q=${uid}`)).body['items'].length).toBe(1);
+    expect(
+      (at((await owner.call('GET', `/api/admin/products?q=${uid}`)).body, 'items') as unknown[])
+        .length,
+    ).toBe(1);
   });
 
   it('sets stock and price, and refuses bad input cleanly', async () => {
@@ -154,7 +167,7 @@ run('admin API', () => {
       (await publisher.call('PUT', `/api/admin/variants/not-a-uuid/stock`, { onHand: 1 })).status,
     ).toBe(422);
     const read = await publisher.call('GET', `/api/admin/products/${productId}`);
-    expect(read.body['variants'][0].prices[0].amount.amount).toBe('2499');
+    expect(at(read.body, 'variants.0.prices.0.amount.amount')).toBe('2499');
   });
 
   it('page lifecycle: save is not publish; bad trees are refused; conflicts are detected', async () => {
@@ -164,8 +177,8 @@ run('admin API', () => {
       title: 'E2E page',
     });
     expect(c.status).toBe(201);
-    pageId = c.body['id'];
-    const blocks = (await owner.call('GET', '/api/admin/blocks')).body as unknown as {
+    pageId = at(c.body, 'id') as string;
+    const blocks = (await owner.call('GET', '/api/admin/blocks')).body as {
       type: string;
       defaultProps: object;
     }[];
@@ -177,7 +190,7 @@ run('admin API', () => {
       expectedVersion: 1,
     });
     expect(saved.status).toBe(200);
-    expect(saved.body['version']).toBe(2);
+    expect(at(saved.body, 'version')).toBe(2);
     expect(
       (await publisher.call('PUT', `/api/admin/pages/${pageId}`, { tree, expectedVersion: 1 }))
         .status,
@@ -201,7 +214,7 @@ run('admin API', () => {
 
   it('theme tokens: validated, versioned', async () => {
     const t = await owner.call('GET', '/api/admin/theme');
-    const v = t.body['version'] as number;
+    const v = at(t.body, 'version') as number;
     expect(
       (
         await owner.call('PUT', '/api/admin/theme', {
@@ -222,13 +235,13 @@ run('admin API', () => {
 
   it('records an audit trail of the above', async () => {
     const a = await owner.call('GET', '/api/admin/audit?limit=100');
-    const actions = (a.body['items'] as { action: string }[]).map((i) => i.action);
+    const actions = (at(a.body, 'items') as { action: string }[]).map((i) => i.action);
     for (const want of ['product.created', 'page.published', 'theme.tokens', 'stock.set'])
       expect(actions, want).toContain(want);
   });
 
   it('cannot disable your own account or strip the last owner', async () => {
-    const me = (await owner.call('GET', '/api/admin/auth/me')).body['user'];
+    const me = at((await owner.call('GET', '/api/admin/auth/me')).body, 'user') as { id: string };
     expect(
       (await owner.call('PATCH', `/api/admin/users/${me.id}`, { status: 'disabled' })).status,
     ).toBe(409);
