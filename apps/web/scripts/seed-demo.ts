@@ -8,7 +8,7 @@ import { CatalogService, PromotionService } from '@sold/commerce';
 import { loadEnv } from '@sold/core/env';
 import { createDb, eq, schema } from '@sold/db';
 import { FxService, StaticFxProvider } from '@sold/payments';
-import { baseRegistry } from '../src/storefront/blocks/registry';
+import { createSchemaRegistry } from '@sold/storefront/blocks';
 
 const env = loadEnv();
 if (env.SOLD_ENVIRONMENT === 'prod') throw new Error('Refusing to seed demo data in prod');
@@ -344,7 +344,7 @@ async function main() {
       stackable: true,
     });
   // Pages
-  const registry: BlockRegistry = baseRegistry();
+  const registry: BlockRegistry = createSchemaRegistry();
   const svc = new PageService(registry);
   for (const locale of ['en-au', 'en-us']) {
     for (const p of pages) {

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { eq, schema } from '@sold/db';
-import { markets } from '../storefront/lib/i18n';
+import { markets } from '@sold/storefront/i18n';
 import { getRuntime } from '../server/runtime';
 
 export const dynamic = 'force-dynamic';

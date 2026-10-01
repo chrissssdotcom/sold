@@ -1,15 +1,12 @@
-import '@fontsource-variable/fraunces';
-import '@fontsource-variable/fraunces/wght-italic.css';
-import '@fontsource-variable/inter';
 import type { Metadata, Viewport } from 'next';
 import { notFound } from 'next/navigation';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { darkTokensCss } from '@sold/storefront';
+import { markets, marketFor } from '@sold/storefront/i18n';
+import { CartProvider } from '@sold/storefront/kit';
 import instanceConfig from '../../../../../sold.config';
-import { CartDrawer } from '../../storefront/components/cart-drawer';
-import { CartProvider } from '../../storefront/components/cart-provider';
-import { Announcement, SiteFooter, SiteHeader } from '../../storefront/components/site-chrome';
-import { marketFor, markets } from '../../storefront/lib/i18n';
-import '../../storefront/styles/storefront.css';
+import { getThemeTokens } from '../../storefront/data';
+import { theme } from '../../storefront/theme';
 
 export const viewport: Viewport = {
   themeColor: [
@@ -41,6 +38,10 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * The shell. It owns routing, the cart provider and token injection; everything visible comes from the active theme's
+ * components, so swapping a theme (or one component of it) never touches this file.
+ */
 export default async function StoreLayout({
   children,
   params,
@@ -51,22 +52,24 @@ export default async function StoreLayout({
   const { locale } = await params;
   const market = marketFor(locale);
   if (!market) notFound();
-  const name = instanceConfig.instance.name;
+  const site = { name: instanceConfig.instance.name };
+  const { Announcement, Header, Footer, CartDrawer } = theme.components;
+  // Theme tokens, then operator overrides from the admin. Values were validated (they become CSS custom properties).
+  const tokens = { ...theme.tokens, ...(await getThemeTokens()) } as CSSProperties;
+  const dark = darkTokensCss(theme);
   return (
-    <html lang={market.tag}>
+    <html lang={market.tag} style={tokens} data-theme-name={theme.name}>
+      <head>{dark ? <style dangerouslySetInnerHTML={{ __html: dark }} /> : null}</head>
       <body>
         <a className="skip-link" href="#main">
           Skip to content
         </a>
         <CartProvider currency={market.currency}>
-          <Announcement>
-            Free delivery on orders over{' '}
-            <strong>{market.currency === 'USD' ? '$150' : 'A$150'}</strong> · 30-day returns
-          </Announcement>
-          <SiteHeader market={market} name={name} />
+          <Announcement market={market} />
+          <Header market={market} site={site} />
           <main id="main">{children}</main>
-          <SiteFooter market={market} name={name} />
-          <CartDrawer tag={market.tag} base={`/${market.slug}`} />
+          <Footer market={market} site={site} />
+          <CartDrawer market={market} />
         </CartProvider>
       </body>
     </html>

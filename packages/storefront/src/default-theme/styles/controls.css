@@ -1,0 +1,183 @@
+/* ---- buttons & controls ------------------------------------------------------------------------------------- */
+
+.btn {
+  --btn-bg: var(--surface);
+  --btn-fg: var(--ink);
+  --btn-bd: var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0 1.4rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--btn-bd);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-weight: 550;
+  font-size: 0.95rem;
+  letter-spacing: 0.005em;
+  text-decoration: none;
+  transition:
+    transform 0.25s var(--ease),
+    background 0.2s,
+    box-shadow 0.25s var(--ease),
+    border-color 0.2s;
+  white-space: nowrap;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.btn:active {
+  transform: translateY(0);
+}
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.btn svg {
+  transition: transform 0.25s var(--ease);
+}
+.btn:hover svg:last-child {
+  transform: translateX(3px);
+}
+.btn--primary {
+  --btn-bg: var(--accent);
+  --btn-fg: var(--accent-ink);
+  --btn-bd: var(--accent);
+}
+.btn--primary:hover {
+  --btn-bg: var(--accent-hover);
+  --btn-bd: var(--accent-hover);
+}
+.btn--dark {
+  --btn-bg: var(--ink);
+  --btn-fg: var(--bg);
+  --btn-bd: var(--ink);
+}
+.btn--ghost {
+  --btn-bg: transparent;
+}
+.btn--ghost:hover {
+  --btn-bg: var(--surface);
+}
+.btn--sm {
+  min-height: 2.25rem;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+}
+.btn--lg {
+  min-height: 3.4rem;
+  padding: 0 2rem;
+  font-size: 1.02rem;
+}
+.btn--block {
+  width: 100%;
+}
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 550;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: center;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+  list-style: none;
+}
+.icon-btn::-webkit-details-marker {
+  display: none;
+}
+.icon-btn:hover {
+  background: var(--surface-2);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.alert {
+  margin: 0 1.5rem 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+  font-size: 0.92rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+/* forms */
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+.field label,
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.input,
+.field input,
+.field select,
+.field textarea,
+.coupon input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.65rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.field input:hover,
+.field select:hover {
+  border-color: var(--muted);
+}
+.field input:focus-visible,
+.field select:focus-visible,
+.coupon input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.field [aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.field__error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+.field__hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}

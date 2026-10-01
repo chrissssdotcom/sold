@@ -1,0 +1,78 @@
+/* ==========================================================================
+   Storefront design system.
+   Tokens first (themeable at runtime from `theme_settings`), then base, layout, components, blocks.
+   Plain CSS on purpose: zero runtime, cacheable, and every value is a token an operator can change.
+   ========================================================================== */
+
+:root {
+  /* Colour: warm paper and ink, one terracotta accent. Every text pair below meets WCAG AA. */
+  --bg: #faf6ef;
+  --surface: #ffffff;
+  --surface-2: #f2ebe0;
+  --surface-3: #e9dfcf;
+  --ink: #1f1a16;
+  --ink-2: #4d443b;
+  --muted: #6a6056;
+  --line: #e4d9c8;
+  --line-strong: #cdbfa9;
+  --accent: #a94a22;
+  --accent-hover: #8f3c19;
+  --accent-ink: #ffffff;
+  --accent-soft: #f7e4d6;
+  --sage: #5d7a59;
+  --ok: #2c6a49;
+  --warn: #8a5a00;
+  --danger: #a8281f;
+  --focus: #1d4ed8;
+
+  /* Type */
+  --font-display: 'Fraunces Variable', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --step--1: clamp(0.8rem, 0.78rem + 0.1vw, 0.875rem);
+  --step-0: clamp(1rem, 0.97rem + 0.15vw, 1.0625rem);
+  --step-1: clamp(1.15rem, 1.08rem + 0.35vw, 1.35rem);
+  --step-2: clamp(1.4rem, 1.25rem + 0.75vw, 1.85rem);
+  --step-3: clamp(1.8rem, 1.45rem + 1.75vw, 2.75rem);
+  --step-4: clamp(2.3rem, 1.7rem + 3vw, 4rem);
+  --step-5: clamp(2.8rem, 1.6rem + 6vw, 6rem);
+
+  /* Shape and depth */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 28px;
+  --r-pill: 999px;
+  --shadow-sm: 0 1px 2px rgb(60 40 20 / 0.06), 0 1px 1px rgb(60 40 20 / 0.04);
+  --shadow-md: 0 8px 24px -8px rgb(60 40 20 / 0.18), 0 2px 6px rgb(60 40 20 / 0.06);
+  --shadow-lg: 0 30px 60px -20px rgb(60 40 20 / 0.3), 0 8px 20px -8px rgb(60 40 20 / 0.12);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+  --maxw: 80rem;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #15110e;
+    --surface: #1e1915;
+    --surface-2: #27211b;
+    --surface-3: #332b23;
+    --ink: #f6efe4;
+    --ink-2: #d6cbbb;
+    --muted: #b0a596;
+    --line: #372f27;
+    --line-strong: #514639;
+    --accent: #e0835a;
+    --accent-hover: #ec9670;
+    --accent-ink: #1b0f08;
+    --accent-soft: #3a2519;
+    --sage: #9bb596;
+    --ok: #6fc49a;
+    --warn: #e8b65a;
+    --danger: #ff8d85;
+    --focus: #7aa2ff;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 8px 24px -8px rgb(0 0 0 / 0.6);
+    --shadow-lg: 0 30px 60px -20px rgb(0 0 0 / 0.7);
+  }
+}

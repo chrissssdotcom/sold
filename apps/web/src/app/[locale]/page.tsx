@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { PageRenderer } from '../../storefront/blocks/render';
-import { getPublishedPage } from '../../storefront/lib/data';
-import { marketFor } from '../../storefront/lib/i18n';
+import { PageRenderer } from '@sold/storefront/blocks';
+import { marketFor } from '@sold/storefront/i18n';
+import { getPublishedPage, storefrontData } from '../../storefront/data';
+import { blockRegistry, theme } from '../../storefront/theme';
 
 // Served from the shared ISR cache and refreshed every minute; publishing a page purges it immediately.
 export const revalidate = 60;
@@ -26,6 +27,15 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
   const market = marketFor(locale);
   if (!market) notFound();
   const page = await getPublishedPage(locale, '/');
-  if (!page) notFound();
-  return <PageRenderer tree={page.tree} market={market} />;
+  if (!page) {
+    const { HomeFallback } = theme.components;
+    return <HomeFallback market={market} />;
+  }
+  return (
+    <PageRenderer
+      tree={page.tree}
+      registry={blockRegistry()}
+      ctx={{ market, data: storefrontData, theme }}
+    />
+  );
 }

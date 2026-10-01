@@ -1,0 +1,229 @@
+/* ---- listing page --------------------------------------------------------------------------------------------- */
+
+.page-head {
+  padding-block: clamp(2.5rem, 6vw, 5rem) clamp(1.5rem, 3vw, 2.5rem);
+}
+.page-head h1 {
+  font-size: var(--step-4);
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-bottom: 1.25rem;
+}
+.crumbs li + li::before {
+  content: '/';
+  margin-right: 0.5rem;
+  opacity: 0.6;
+}
+.crumbs a {
+  text-decoration: none;
+}
+.crumbs a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* ---- product detail ------------------------------------------------------------------------------------------ */
+
+.pdp {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: start;
+  padding-bottom: clamp(3rem, 6vw, 6rem);
+}
+.pdp__gallery {
+  position: sticky;
+  top: 6.5rem;
+  display: grid;
+  gap: 0.9rem;
+}
+.pdp__main {
+  aspect-ratio: 4 / 5;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+}
+.pdp__main img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.06);
+}
+.pdp__info {
+  display: grid;
+  gap: 1.5rem;
+  align-content: start;
+}
+.pdp__title {
+  font-size: var(--step-4);
+}
+.pdp__sub {
+  color: var(--muted);
+  font-size: var(--step-1);
+  margin-top: 0.4rem;
+}
+.options {
+  display: grid;
+  gap: 0.6rem;
+}
+.options__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.option {
+  position: relative;
+}
+.option input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  cursor: pointer;
+}
+.option span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.15rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-weight: 540;
+  transition: all 0.2s var(--ease);
+}
+.option input:hover + span {
+  border-color: var(--ink);
+}
+.option input:checked + span {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+.option input:focus-visible + span {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.option input:disabled + span {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.buy {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+.buy__btn {
+  flex: 1;
+}
+.stepper {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+}
+.stepper button {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+}
+.stepper button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.stepper button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.stepper output {
+  min-width: 2rem;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stepper--lg button {
+  width: 3rem;
+  height: 3rem;
+}
+.stepper--lg {
+  padding: 0.2rem;
+}
+.stock {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 560;
+}
+.stock::before {
+  content: '';
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.stock--low {
+  color: var(--warn);
+}
+.stock--low::before {
+  background: var(--warn);
+}
+.stock--out {
+  color: var(--danger);
+}
+.stock--out::before {
+  background: var(--danger);
+}
+.highlights {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.4rem 1.5rem;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.highlights li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  color: var(--ink-2);
+}
+.highlights svg {
+  flex: none;
+  color: var(--sage);
+  margin-top: 0.15rem;
+}
+.assure {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+.assure > div {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+.assure svg {
+  color: var(--accent);
+}
+@media (max-width: 56rem) {
+  .pdp {
+    grid-template-columns: 1fr;
+  }
+  .pdp__gallery {
+    position: static;
+  }
+}

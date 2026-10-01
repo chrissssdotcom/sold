@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { localeSlugs, negotiateMarket, reservedPrefixes } from './storefront/lib/i18n';
+import { localeSlugs, negotiateMarket, reservedPrefixes } from '@sold/storefront/i18n';
 
 const SAFE_ID = /^[A-Za-z0-9._-]{8,128}$/;
 

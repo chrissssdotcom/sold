@@ -1,5 +1,7 @@
 # Storefront
 
+The storefront is modular: see [theming.md](./theming.md) for how to restyle or replace any part of it.
+
 A server-rendered Next.js storefront over the commerce core, with a page builder for content pages.
 
 ## Try it
@@ -16,7 +18,7 @@ isolation (`SOLD_EXTENSION_DB_SECRET`, see ADR-0004).
 
 ## Design system
 
-`apps/web/src/storefront/styles/storefront.css`: plain CSS tokens (colour, type scale, radii, shadows), warm paper/ink with one
+`packages/storefront/src/default-theme/styles/*.css` (nine small modules): plain CSS tokens (colour, type scale, radii, shadows), warm paper/ink with one
 terracotta accent, automatic dark mode, `prefers-reduced-motion` respected, self-hosted variable fonts (Fraunces + Inter),
 visible focus rings, skip link. Every value is a token an operator can override at runtime from `theme_settings`.
 Product and editorial art is procedurally generated SVG (`scripts/gen-art.mjs`), so the demo has no licensed or binary assets.

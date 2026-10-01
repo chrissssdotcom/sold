@@ -37,7 +37,7 @@ const config: NextConfig = {
   outputFileTracingRoot: resolve(here, '../..'),
   poweredByHeader: false,
   reactStrictMode: true,
-  transpilePackages: ['@sold/core', '@sold/db', '@sold/commerce', '@sold/payments', '@sold/content'],
+  transpilePackages: ['@sold/core', '@sold/db', '@sold/commerce', '@sold/payments', '@sold/content', '@sold/storefront'],
   serverExternalPackages: ['pg', 'ioredis', 'pino', 'prom-client'],
   // A stable build ID is required so every replica of a release agrees (Section 8A.3).
   generateBuildId: async () => process.env.SOLD_BUILD_ID ?? 'dev',

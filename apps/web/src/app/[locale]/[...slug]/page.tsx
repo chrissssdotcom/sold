@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { PageRenderer } from '../../../storefront/blocks/render';
-import { getPublishedPage } from '../../../storefront/lib/data';
-import { marketFor } from '../../../storefront/lib/i18n';
+import { PageRenderer } from '@sold/storefront/blocks';
+import { marketFor } from '@sold/storefront/i18n';
+import { getPublishedPage, storefrontData } from '../../../storefront/data';
+import { blockRegistry, theme } from '../../../storefront/theme';
 
 export const revalidate = 60;
-// Render on first request, then serve from the shared ISR cache (nothing is prerendered at build: no database needed).
 export const generateStaticParams = () => [];
 
 const pathOf = (slug: string[]) => `/${slug.join('/')}`;
@@ -37,5 +37,11 @@ export default async function BuilderPage({
   if (!market) notFound();
   const page = await getPublishedPage(locale, pathOf(slug));
   if (!page) notFound();
-  return <PageRenderer tree={page.tree} market={market} />;
+  return (
+    <PageRenderer
+      tree={page.tree}
+      registry={blockRegistry()}
+      ctx={{ market, data: storefrontData, theme }}
+    />
+  );
 }

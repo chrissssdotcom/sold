@@ -7,6 +7,7 @@ import { extDocs } from './ext/docs';
 import { extList } from './ext/list';
 import { extMigrate } from './ext/migrate';
 import { extNew } from './ext/scaffold';
+import { themeList, themeNew } from './theme/scaffold';
 import { extSync } from './ext/sync';
 import {
   envCost,
@@ -291,6 +292,27 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
           });
         },
       ),
+    );
+
+  // ---- themes --------------------------------------------------------------------------------
+  program
+    .command('theme:new')
+    .description('scaffold a storefront theme (extends the default theme) from themes/_template')
+    .argument('<name>', 'kebab-case theme name (2-31 chars)')
+    .option('--title <text>', 'one-line description')
+    .action(
+      action(async (context, name: string, options: { title?: string }) => {
+        await themeNew(context, { name, ...(options.title ? { title: options.title } : {}) });
+      }),
+    );
+
+  program
+    .command('theme:list')
+    .description('list available themes; the active one is marked')
+    .action(
+      action(async (context) => {
+        await themeList(context);
+      }),
     );
 
   // ---- extensions ----------------------------------------------------------------------------

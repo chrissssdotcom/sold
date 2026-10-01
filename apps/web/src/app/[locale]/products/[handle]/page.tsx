@@ -1,15 +1,11 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { BuyBox } from '../../../../storefront/components/buy-box';
-import { Check, Leaf, Refresh, Truck } from '../../../../storefront/components/icons';
-import { ProductCard } from '../../../../storefront/components/product-card';
-import { getAvailability, getProduct, getProducts } from '../../../../storefront/lib/data';
-import { marketFor } from '../../../../storefront/lib/i18n';
-import { priceIn, viewOf } from '../../../../storefront/lib/product';
+import { marketFor } from '@sold/storefront/i18n';
+import { viewOf } from '@sold/storefront/kit';
+import { getProduct, storefrontData } from '../../../../storefront/data';
+import { theme } from '../../../../storefront/theme';
 
 export const revalidate = 60;
-// Render on first request, then serve from the shared ISR cache (nothing is prerendered at build: no database needed).
 export const generateStaticParams = () => [];
 
 type Params = Promise<{ locale: string; handle: string }>;
@@ -33,34 +29,14 @@ export default async function ProductPage({ params }: { params: Params }) {
   if (!market) notFound();
   const product = await getProduct(handle);
   if (!product) notFound();
-  const v = viewOf(product);
-  const stock = await getAvailability(
-    product.variants
-      .map((x) => x.id)
-      .sort()
-      .join(','),
-  );
-  const variants = product.variants.map((x) => {
-    const p = priceIn(x, market.currency);
-    return {
-      id: x.id,
-      title: x.title,
-      price: p?.price ?? null,
-      compareAt: p?.compareAt ?? null,
-      available: stock.get(x.id)?.available ?? 0,
-    };
-  });
-  const related = (await getProducts(8)).filter((p) => p.handle !== handle).slice(0, 4);
-  const relatedStock = await getAvailability(
-    related
-      .flatMap((p) => p.variants.map((x) => x.id))
-      .sort()
-      .join(','),
+  const stock = await storefrontData.availability(product.variants.map((x) => x.id));
+  const related = (await storefrontData.products(8)).filter((p) => p.handle !== handle).slice(0, 4);
+  const relatedStock = await storefrontData.availability(
+    related.flatMap((p) => p.variants.map((x) => x.id)),
   );
 
-  const low = variants
-    .filter((x) => x.price)
-    .sort((a, b) => Number(BigInt(a.price!.amount) - BigInt(b.price!.amount)))[0];
+  // Structured data is SEO plumbing Base owns, independent of how the theme draws the page.
+  const v = viewOf(product);
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -68,112 +44,35 @@ export default async function ProductPage({ params }: { params: Params }) {
     description: v.description,
     image: v.images,
     sku: product.variants[0]?.sku,
-    offers: variants
-      .filter((x) => x.price)
-      .map((x) => ({
-        '@type': 'Offer',
-        price: (
-          Number(BigInt(x.price!.amount)) /
-          10 **
-            (new Intl.NumberFormat('en', {
-              style: 'currency',
-              currency: x.price!.currency,
-            }).resolvedOptions().maximumFractionDigits ?? 2)
-        ).toFixed(2),
-        priceCurrency: x.price!.currency,
-        availability:
-          x.available === 0 ? 'https://schema.org/OutOfStock' : 'https://schema.org/InStock',
-      })),
+    offers: product.variants.flatMap((x) =>
+      x.prices
+        .filter((p) => p.currency === market.currency)
+        .map((p) => ({
+          '@type': 'Offer',
+          price: p.amount.toDecimalString(),
+          priceCurrency: p.currency,
+          availability:
+            stock.get(x.id)?.available === 0
+              ? 'https://schema.org/OutOfStock'
+              : 'https://schema.org/InStock',
+        })),
+    ),
   };
-  void low;
-
+  const { ProductDetailPage } = theme.components;
   return (
-    <div className="container">
+    <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
-      <nav aria-label="Breadcrumb" className="page-head" style={{ paddingBottom: '1.25rem' }}>
-        <ol className="crumbs" style={{ margin: 0 }}>
-          <li>
-            <Link href={`/${market.slug}`}>Home</Link>
-          </li>
-          <li>
-            <Link href={`/${market.slug}/products`}>Shop</Link>
-          </li>
-          <li aria-current="page">{v.title}</li>
-        </ol>
-      </nav>
-      <div className="pdp">
-        <div className="pdp__gallery">
-          <div className="pdp__main">
-            {v.images[0] ? (
-              <img
-                src={v.images[0]}
-                alt={`${v.title}`}
-                width={900}
-                height={1125}
-                fetchPriority="high"
-              />
-            ) : null}
-          </div>
-        </div>
-        <div className="pdp__info">
-          <div>
-            {v.collection ? <span className="eyebrow">{v.collection}</span> : null}
-            <h1 className="pdp__title" style={{ marginTop: '0.6rem' }}>
-              {v.title}
-            </h1>
-            {v.subtitle ? <p className="pdp__sub">{v.subtitle}</p> : null}
-          </div>
-          <BuyBox variants={variants} tag={market.tag} productTitle={v.title} />
-          {v.description ? <p style={{ color: 'var(--ink-2)' }}>{v.description}</p> : null}
-          {v.highlights.length > 0 ? (
-            <ul className="highlights" aria-label="Highlights">
-              {v.highlights.map((h) => (
-                <li key={h}>
-                  <Check width={20} height={20} />
-                  {h}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <div className="assure">
-            <div>
-              <Truck width={22} height={22} />
-              Free delivery over {market.currency === 'USD' ? '$150' : 'A$150'}
-            </div>
-            <div>
-              <Refresh width={22} height={22} />
-              30-day easy returns
-            </div>
-            <div>
-              <Leaf width={22} height={22} />
-              Made in small batches
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {related.length > 0 ? (
-        <section style={{ paddingBottom: 'clamp(3rem,7vw,6rem)' }} aria-labelledby="related">
-          <div className="section__head">
-            <h2 id="related" className="h-section" style={{ marginTop: 0 }}>
-              You may also love
-            </h2>
-          </div>
-          <div className="grid">
-            {related.map((p) => (
-              <ProductCard
-                key={p.id}
-                product={p}
-                market={market}
-                soldOut={p.variants.every((x) => relatedStock.get(x.id)?.available === 0)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </div>
+      <ProductDetailPage
+        market={market}
+        product={product}
+        stock={stock}
+        related={related}
+        relatedStock={relatedStock}
+        theme={theme}
+      />
+    </>
   );
 }

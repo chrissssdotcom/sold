@@ -1,0 +1,168 @@
+/* ---- price, badge, card -------------------------------------------------------------------------------------- */
+
+.price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 560;
+}
+.price--lg {
+  font-size: var(--step-2);
+  font-family: var(--font-display);
+}
+.price__from {
+  color: var(--muted);
+  font-weight: 450;
+  font-size: 0.85em;
+}
+.price__now--sale {
+  color: var(--accent);
+}
+.price__was {
+  color: var(--muted);
+  font-weight: 420;
+  font-size: 0.88em;
+}
+.badge {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
+}
+.badge--muted {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.grid {
+  display: grid;
+  gap: clamp(1rem, 2.4vw, 2rem) clamp(0.75rem, 2vw, 1.5rem);
+  --cols: var(--cols-max, 4);
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+}
+@media (max-width: 70rem) {
+  .grid {
+    --cols: min(var(--cols-max, 4), 3);
+  }
+}
+@media (max-width: 52rem) {
+  .grid {
+    --cols: min(var(--cols-max, 4), 2);
+  }
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.card__figure {
+  position: relative;
+}
+.card__media {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  isolation: isolate;
+}
+.card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.12);
+  transition: transform 0.8s var(--ease);
+}
+.card:hover .card__media img,
+.card:focus-within .card__media img {
+  transform: scale(1.2);
+}
+.card__media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.05);
+  pointer-events: none;
+}
+.card__body {
+  display: grid;
+  gap: 0.2rem;
+  padding-inline: 0.15rem;
+}
+.card__title {
+  font-size: 1.12rem;
+  font-weight: 520;
+  letter-spacing: -0.01em;
+}
+.card__title a {
+  text-decoration: none;
+}
+.card__title a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.card__sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.quick-add {
+  position: absolute;
+  z-index: 2;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  font-weight: 600;
+  font-size: 0.9rem;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateY(0.75rem);
+  transition:
+    opacity 0.3s var(--ease),
+    transform 0.4s var(--ease),
+    background 0.2s;
+}
+.card:hover .quick-add,
+.quick-add:focus-visible {
+  opacity: 1;
+  transform: none;
+}
+.quick-add:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+@media (hover: none) {
+  .quick-add {
+    opacity: 1;
+    transform: none;
+    left: auto;
+    right: 0.6rem;
+    width: 2.75rem;
+    padding: 0;
+  }
+  .quick-add span {
+    display: none;
+  }
+}

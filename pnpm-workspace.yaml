@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - extensions/*
+  - themes/*
   - ops/loadtests
 onlyBuiltDependencies:
   - esbuild

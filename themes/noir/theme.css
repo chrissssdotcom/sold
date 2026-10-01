@@ -1,0 +1,171 @@
+/* Noir: structure and finish for the pieces this theme replaces. Colours come from the tokens in index.ts. */
+body {
+  letter-spacing: 0.005em;
+}
+h1,
+h2,
+h3 {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.noir-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.noir-header::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.6;
+}
+.noir-header__row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 5rem;
+  gap: 1rem;
+}
+.noir-nav {
+  display: flex;
+  gap: 1.75rem;
+}
+.noir-nav a {
+  font-size: 0.78rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid transparent;
+}
+.noir-nav a:hover {
+  border-color: var(--accent);
+}
+.noir-logo {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  font-variation-settings:
+    'opsz' 144,
+    'SOFT' 0;
+}
+.noir-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+@media (max-width: 40rem) {
+  .noir-nav {
+    display: none;
+  }
+  .noir-header__row {
+    grid-template-columns: auto 1fr;
+  }
+}
+
+.noir-card {
+  position: relative;
+}
+.noir-card__link {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  isolation: isolate;
+}
+.noir-card__link img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.12);
+  transition:
+    transform 0.9s var(--ease),
+    filter 0.5s;
+  filter: saturate(0.9) brightness(0.92);
+}
+.noir-card__link:hover img {
+  transform: scale(1.2);
+  filter: saturate(1) brightness(1);
+}
+.noir-card__shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, rgb(8 7 6 / 0.85));
+  z-index: 1;
+}
+.noir-card__text {
+  position: absolute;
+  z-index: 2;
+  left: 1rem;
+  right: 1rem;
+  bottom: 0.9rem;
+  display: grid;
+  gap: 0.15rem;
+  color: #f3ece1;
+}
+.noir-card__title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+.noir-card__price {
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.noir-hero {
+  position: relative;
+  min-height: min(78vh, 46rem);
+  display: grid;
+  align-items: center;
+  background-size: cover;
+  background-position: right center;
+  border-bottom: 1px solid var(--line);
+}
+.noir-hero__inner {
+  padding-block: 4rem;
+  max-width: 80rem;
+}
+.noir-hero__eyebrow {
+  font-size: 0.78rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.noir-hero__title {
+  font-size: clamp(2.8rem, 1.4rem + 7vw, 7rem);
+  line-height: 0.95;
+  max-width: 14ch;
+  margin: 1rem 0 1.5rem;
+}
+.noir-hero__title em {
+  color: var(--accent);
+  font-style: italic;
+}
+.noir-hero__body {
+  max-width: 28rem;
+  font-size: var(--step-1);
+  color: var(--ink-2);
+}
+.noir-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 2rem;
+}
+
+.announce {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.announce strong {
+  color: var(--accent-ink);
+}

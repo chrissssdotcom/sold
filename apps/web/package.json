@@ -15,7 +15,7 @@
     "test:integration": "vitest run --project integration",
     "worker": "node scripts/build.mjs && dotenv -e ../../.env -- node .generated/worker.cjs",
     "pretest:integration": "pnpm sync && node scripts/build.mjs",
-    "sync": "tsx scripts/sync-extensions.ts",
+    "sync": "tsx scripts/sync-extensions.ts && tsx scripts/sync-theme.ts",
     "pretypecheck": "pnpm sync",
     "pretest": "pnpm sync",
     "preworker": "pnpm sync",
@@ -23,8 +23,6 @@
     "test:e2e": "vitest run --project e2e"
   },
   "dependencies": {
-    "@fontsource-variable/fraunces": "^5.3.0",
-    "@fontsource-variable/inter": "^5.3.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
@@ -37,6 +35,7 @@
     "@sold/extension-sdk": "workspace:*",
     "@sold/jobs": "workspace:*",
     "@sold/payments": "workspace:*",
+    "@sold/storefront": "workspace:*",
     "ioredis": "^6.0.0",
     "next": "^16.3.7",
     "prom-client": "^15.1.3",
