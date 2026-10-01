@@ -6,10 +6,10 @@ Status: accepted · Phase 8
 
 `apps/web/src/proxy.ts` sets a CSP on every response, built by `server/csp.ts`, with two postures:
 
-| Surface                        | `script-src`                                                        | Why                                                                                                                         |
-| ------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Staff console (`/admin/**`)    | `'self' 'nonce-<per request>' 'strict-dynamic'`                     | Always dynamic, handles the most sensitive session; a stored-XSS bug here is the worst case, so inline script is not allowed. |
-| Storefront (everything else)   | `'self' 'unsafe-inline'` + hosts from `SOLD_CSP_SCRIPT_HOSTS`       | HTML is ISR/CDN-cached and shared between visitors: a per-request nonce would either break caching or be reused (useless). |
+| Surface                      | `script-src`                                                  | Why                                                                                                                           |
+| ---------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Staff console (`/admin/**`)  | `'self' 'nonce-<per request>' 'strict-dynamic'`               | Always dynamic, handles the most sensitive session; a stored-XSS bug here is the worst case, so inline script is not allowed. |
+| Storefront (everything else) | `'self' 'unsafe-inline'` + hosts from `SOLD_CSP_SCRIPT_HOSTS` | HTML is ISR/CDN-cached and shared between visitors: a per-request nonce would either break caching or be reused (useless).    |
 
 All other directives are strict on both: `default-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`,
 `frame-ancestors 'self'` (the page-builder preview frames our own origin), `img-src 'self' data: blob: https:` (merchant images
