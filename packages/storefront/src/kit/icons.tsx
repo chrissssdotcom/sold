@@ -20,6 +20,12 @@ export const Bag = (p: SVGProps<SVGSVGElement>) => (
     <path d="M9 8V7a3 3 0 0 1 6 0v1" />
   </svg>
 );
+export const User = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21a8 8 0 0 1 16 0" />
+  </svg>
+);
 export const Truck = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" />

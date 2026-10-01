@@ -30,6 +30,8 @@ run('storefront', () => {
       '/en-au/cart',
       '/en-au/checkout',
       '/en-au/about',
+      '/en-au/account/login',
+      '/en-au/account/register',
     ];
     const violations: string[] = [];
     for (const scheme of ['light', 'dark'] as const) {

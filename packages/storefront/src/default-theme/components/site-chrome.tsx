@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { CartButton } from './cart-drawer';
 import { MarketSwitcher } from './market-switcher';
+import { User } from '../../kit/icons';
 import type { ChromeProps } from '../../contract';
 import type { Market } from '../../kit/i18n';
 
@@ -33,6 +34,9 @@ export function SiteHeader({ market, site }: ChromeProps) {
         </nav>
         <div className="site-header__actions">
           <MarketSwitcher current={market.slug} />
+          <Link href={`${base}/account`} className="icon-btn" aria-label="Account">
+            <User width={22} height={22} />
+          </Link>
           <CartButton label="Open bag" />
         </div>
       </div>

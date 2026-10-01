@@ -3,6 +3,7 @@ import { addressSchema, CommerceError } from '@sold/commerce';
 import { errorResponse, json, readJson } from '../../../server/commerce-http';
 import { getCommerce } from '../../../server/commerce';
 import { getCommerceMetrics } from '../../../server/commerce-metrics';
+import { currentSession } from '../../../server/identity';
 import { route } from '../../../server/route';
 import { getRuntime } from '../../../server/runtime';
 import { PRIVATE, requireCartId } from '../../../server/storefront';
@@ -32,10 +33,12 @@ export const POST = route(async (request) => {
         'An Idempotency-Key header is required',
         400,
       );
+    // A signed-in customer's order is linked to their account; a guest's is not (the order token still lets them view it).
+    const session = await currentSession(request.headers.get('cookie'), 'customer');
     const { checkout } = await getCommerce();
     const { order, replayed } = await checkout.place(
       getRuntime().db.primary,
-      { ...input, cartId, customerId: null },
+      { ...input, cartId, customerId: session?.user.id ?? null },
       idempotencyKey,
     );
     metrics.checkout.inc({ outcome: replayed ? 'replayed' : 'placed' });

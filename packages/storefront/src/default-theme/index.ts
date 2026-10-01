@@ -4,6 +4,8 @@ import { CartDrawer } from './components/cart-drawer';
 import { ProductCard } from './components/product-card';
 import { Announcement, SiteFooter, SiteHeader } from './components/site-chrome';
 import { defaultBlocks } from './blocks';
+import { AccountPage } from './pages/account';
+import { AuthPage } from './pages/auth';
 import { CartPage } from './pages/cart';
 import { CheckoutPage } from './pages/checkout';
 import { HomeFallback } from './pages/home-fallback';
@@ -32,6 +34,8 @@ export const defaultTheme = defineTheme({
     CheckoutPage,
     OrderPage,
     NotFoundPage,
+    AuthPage,
+    AccountPage,
   },
   blocks: defaultBlocks,
 });

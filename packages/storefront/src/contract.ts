@@ -63,6 +63,25 @@ export interface MarketProps {
   market: Market;
 }
 
+export interface AuthPageProps {
+  market: Market;
+  mode: 'login' | 'register';
+}
+
+export interface AccountOrderSummary {
+  id: string;
+  number: string;
+  status: string;
+  placedAt: string;
+  total: { amount: string; currency: string };
+}
+
+export interface AccountPageProps {
+  market: Market;
+  customer: { name: string; email: string };
+  orders: AccountOrderSummary[];
+}
+
 /** Layout parts, interactive widgets and whole page templates. Every one is optional in a child theme. */
 export interface ThemeComponents {
   Announcement: ComponentType<MarketProps>;
@@ -78,6 +97,9 @@ export interface ThemeComponents {
   CheckoutPage: ComponentType<MarketProps>;
   OrderPage: ComponentType<OrderPageProps>;
   NotFoundPage: ComponentType<Partial<MarketProps>>;
+  /** Sign in / create account (a client form that talks to /api/auth/*). */
+  AuthPage: ComponentType<AuthPageProps>;
+  AccountPage: ComponentType<AccountPageProps>;
 }
 
 export interface BlockContext {
@@ -166,6 +188,8 @@ export function defineTheme(def: ThemeDefinition): Theme {
       'CheckoutPage',
       'OrderPage',
       'NotFoundPage',
+      'AuthPage',
+      'AccountPage',
     ] as const
   ).filter((k) => !components[k]);
   if (missing.length > 0)
