@@ -25,6 +25,8 @@ export interface QueueClient {
 export interface Actor {
   id: string;
   kind: 'admin' | 'customer' | 'api-key' | 'system';
+  /** Permissions held right now (resolved by Base from the live session on this request). Set by Base only. */
+  permissions?: readonly string[];
 }
 
 interface Common<S> {

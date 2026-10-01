@@ -6,6 +6,7 @@ import {
   type ResolvedSession,
   type UserKind,
 } from '@sold/identity';
+import * as generated from '../../.generated/extensions';
 import { getRuntime } from './runtime';
 
 interface Services {
@@ -16,13 +17,23 @@ interface Services {
 }
 const holder = globalThis as unknown as { __soldIdentity?: Services };
 
+/** Permission keys contributed by installed extensions, so roles can grant them. Read from the generated registry, not the live kernel. */
+function extensionPermissions(): string[] {
+  const candidates = (
+    generated as unknown as {
+      candidates: { manifest: { permissions: readonly { key: string }[] } }[];
+    }
+  ).candidates;
+  return candidates.flatMap((c) => c.manifest.permissions.map((p) => p.key));
+}
+
 export function getIdentity(): Services {
   if (!holder.__soldIdentity) {
     const sessions = new SessionService();
     holder.__soldIdentity = {
       sessions,
       auth: new AuthService(sessions),
-      roles: new RoleService(),
+      roles: new RoleService(extensionPermissions),
       scim: new ScimService(),
     };
   }

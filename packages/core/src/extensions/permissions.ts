@@ -50,6 +50,8 @@ export class PermissionRegistry {
 export interface AuthorizationSubject {
   id: string;
   kind: 'admin' | 'customer' | 'api-key' | 'system';
+  /** Permissions resolved by the caller from the live session. An authorizer reads these; it never trusts a client. */
+  permissions?: readonly string[];
 }
 
 export class ForbiddenError extends Error {

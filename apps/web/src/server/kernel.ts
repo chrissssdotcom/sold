@@ -7,6 +7,7 @@ import {
 import type { JobQueue } from '@sold/core/jobs';
 import { PgBossQueue } from '@sold/jobs';
 import * as generated from '../../.generated/extensions';
+import { rbacAuthorizer } from './authorizer';
 import { getRuntime, type Runtime } from './runtime';
 
 /**
@@ -105,6 +106,7 @@ async function boot(rt: Runtime, slot: Slot): Promise<Kernel> {
     db: rt.db,
     queue,
     registry,
+    authorizer: rbacAuthorizer,
     onInterceptorMetric: (m) => {
       rt.metrics.interceptorCalls.inc({
         extension: m.extension,

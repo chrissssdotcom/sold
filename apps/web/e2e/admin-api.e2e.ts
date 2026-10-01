@@ -233,6 +233,40 @@ run('admin API', () => {
     await owner.call('PUT', '/api/admin/theme', { tokens: {} });
   });
 
+  it('extension routes use the same RBAC: anonymous 401, no permission 403, granted role or owner 200', async () => {
+    const path = '/x/loyalty-points/balance/some-customer';
+    expect((await new Client().call('GET', path)).status).toBe(401);
+    expect((await limited.call('GET', path)).status).toBe(403);
+    // A role can be granted an extension permission (the key is registered by the extension, not hard-coded in Base).
+    const name = `loyalty-${uid}`;
+    expect(
+      (
+        await owner.call('POST', '/api/admin/roles', {
+          name,
+          permissions: ['loyalty-points.accounts.read'],
+        })
+      ).status,
+    ).toBe(201);
+    const email = `${name}@example.test`;
+    const pw = `Zx9-${uid}-long-enough-pass`;
+    expect(
+      (await owner.call('POST', '/api/admin/users', { email, name, password: pw, roles: [name] }))
+        .status,
+    ).toBe(201);
+    const granted = new Client();
+    await granted.login(email, pw);
+    expect((await granted.call('GET', path)).status).toBe(200);
+    expect((await owner.call('GET', path)).status).toBe(200);
+    // A customer session is never an admin actor.
+    const cust = new Client();
+    const reg = await cust.call('POST', '/api/auth/register', {
+      email: `c-${uid}@example.test`,
+      password: pw,
+    });
+    expect(reg.status).toBe(201);
+    expect((await cust.call('GET', path)).status).toBe(403);
+  });
+
   it('records an audit trail of the above', async () => {
     const a = await owner.call('GET', '/api/admin/audit?limit=100');
     const actions = (at(a.body, 'items') as { action: string }[]).map((i) => i.action);

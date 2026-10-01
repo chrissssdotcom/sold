@@ -63,6 +63,22 @@ describe('tokens', () => {
   });
 });
 
+describe('rbac: extension permissions', () => {
+  const key = 'loyalty-points.accounts.read';
+  it('are exact grants; owner (*) holds them; area wildcards do not reach them', () => {
+    expect(can([key], key)).toBe(true);
+    expect(can(['*'], key)).toBe(true);
+    expect(can(['orders:*', 'catalog:*'], key)).toBe(false);
+    expect(can([key], 'loyalty-points.accounts.adjust')).toBe(false);
+    expect(can(['loyalty-points.accounts.*'], key)).toBe(false); // no wildcards on extension keys
+  });
+  it('can only be granted to a role when an installed extension registered the key', () => {
+    expect(isKnownPermission(key, [key])).toBe(true);
+    expect(isKnownPermission(key, [])).toBe(false);
+    expect(isKnownPermission('evil.made.up', [key])).toBe(false);
+  });
+});
+
 describe('rbac', () => {
   it('matches exact, area wildcard and global wildcard; nothing else', () => {
     expect(can(['orders:read'], 'orders:read')).toBe(true);

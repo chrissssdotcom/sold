@@ -10,6 +10,7 @@ import type { JobQueue } from '../jobs/queue';
 import { Kernel, type BaseServiceProvider, type KernelDeps, type KernelLogger } from './kernel';
 import type { InterceptorMetric } from './interceptor-runner';
 import type { ExtensionCandidate, ExtensionEntry } from './load-order';
+import type { Authorizer } from './permissions';
 
 /** The shape of the build-time generated module (`apps/web/.generated/extensions.ts`, see `discovery.ts`). */
 export interface GeneratedRegistry {
@@ -70,6 +71,8 @@ export interface CreateKernelOptions {
   queue: JobQueue;
   registry: GeneratedRegistry;
   baseProviders?: readonly BaseServiceProvider[];
+  /** Decides whether an actor may use a non-public extension route. Default: deny everything (fail closed). */
+  authorizer?: Authorizer;
   /** Only the release-pipeline CLI passes this. */
   migrateExtension?: KernelDeps['migrateExtension'];
   onInterceptorMetric?(metric: InterceptorMetric): void;
@@ -125,6 +128,7 @@ export function createKernel(opts: CreateKernelOptions): Kernel {
     crypto: cryptoFromEnv(env),
     log: opts.log,
     ...(opts.baseProviders ? { baseProviders: opts.baseProviders } : {}),
+    ...(opts.authorizer ? { authorizer: opts.authorizer } : {}),
     ...(opts.migrateExtension ? { migrateExtension: opts.migrateExtension } : {}),
     ...(opts.onInterceptorMetric ? { onInterceptorMetric: opts.onInterceptorMetric } : {}),
   });

@@ -1,4 +1,5 @@
 import { handleExtensionRequest } from '@/server/extension-http';
+import { resolveActorFromRequest } from '@/server/actor';
 import { getKernel } from '@/server/kernel';
 import { getRuntime } from '@/server/runtime';
 import { route } from '@/server/route';
@@ -15,6 +16,7 @@ const handler = route(async (request, { requestId }) => {
       log: rt.log,
       timeoutMs: rt.env.SOLD_EXTENSION_ROUTE_TIMEOUT_MS,
       maxBodyBytes: rt.env.SOLD_EXTENSION_MAX_BODY_BYTES,
+      resolveActor: (req) => resolveActorFromRequest(req),
       onResult: ({ extension, status, seconds }) => {
         rt.metrics.extensionRequests.inc({
           extension,
