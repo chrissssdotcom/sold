@@ -76,6 +76,8 @@ run('admin console', () => {
         '/admin/promotions',
         '/admin/theme',
         '/admin/users',
+        '/admin/flags',
+        '/admin/extensions',
         '/admin/audit',
       ];
       for (const path of paths) {

@@ -267,6 +267,57 @@ run('admin API', () => {
     expect((await cust.call('GET', path)).status).toBe(403);
   });
 
+  it('feature flags: validated, permissioned, audited', async () => {
+    const key = `e2e.flag-${uid}`;
+    expect((await limited.call('GET', '/api/admin/flags')).status).toBe(403);
+    expect(
+      (await owner.call('PUT', '/api/admin/flags', { key: 'Bad Key', enabled: true })).status,
+    ).toBe(422);
+    expect(
+      (
+        await owner.call('PUT', '/api/admin/flags', {
+          key,
+          enabled: true,
+          rules: { rolloutPercent: 150 },
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await owner.call('PUT', '/api/admin/flags', {
+          key,
+          enabled: true,
+          rules: {
+            variants: [
+              { name: 'a', weight: 1 },
+              { name: 'a', weight: 1 },
+            ],
+          },
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await owner.call('PUT', '/api/admin/flags', {
+          key,
+          enabled: true,
+          rules: {
+            rolloutPercent: 25,
+            variants: [
+              { name: 'control', weight: 1 },
+              { name: 'new', weight: 1 },
+            ],
+          },
+        })
+      ).status,
+    ).toBe(200);
+    const list = (await owner.call('GET', '/api/admin/flags')).body;
+    expect(
+      (at(list, 'flags') as { key: string; enabled: boolean }[]).find((f) => f.key === key)
+        ?.enabled,
+    ).toBe(true);
+  });
+
   it('records an audit trail of the above', async () => {
     const a = await owner.call('GET', '/api/admin/audit?limit=100');
     const actions = (at(a.body, 'items') as { action: string }[]).map((i) => i.action);
