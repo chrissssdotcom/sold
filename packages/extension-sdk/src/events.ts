@@ -21,6 +21,8 @@ export interface EventMap {
     customerId: string | null;
     total: MoneyValue;
     placedAt: Date;
+    /** The customer's marketing-cookie consent when they ordered. Server-side marketing events must check it. */
+    marketingConsent?: boolean;
   };
   'payment.captured': { paymentId: string; orderId: string; amount: MoneyValue; gateway: string };
   /** Every order state change (paid, shipped, cancelled, refunded, ...). */

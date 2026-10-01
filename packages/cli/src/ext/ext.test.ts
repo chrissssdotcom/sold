@@ -241,7 +241,7 @@ describe('ext:sync, ext:list, ext:docs (real repository)', () => {
     const ctx = makeContext({ cwd: repoRoot });
     await extList(ctx);
     expect(ctx.out.lines.join('\n')).toMatch(
-      /1 extension\(s\) load in this order:[\s\S]*1\. loyalty-points@1\.0\.0 \[first-party\] \(hot path\)/,
+      /3 extension\(s\) load in this order:[\s\S]*1\. loyalty-points@1\.0\.0 \[first-party\] \(hot path\)[\s\S]*2\. reviews@0\.1\.0 \[first-party\]/,
     );
   });
 

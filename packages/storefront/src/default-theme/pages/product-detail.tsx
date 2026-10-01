@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ProductDetailPageProps } from '../../contract';
 import { Check, Leaf, Refresh, Truck } from '../../kit/icons';
 import { priceIn, viewOf } from '../../kit/product';
+import { TrackViewItem } from '../../kit/track';
 import { BuyBox } from '../components/buy-box';
 
 export function ProductDetailPage({
@@ -26,8 +27,15 @@ export function ProductDetailPage({
     };
   });
   const free = market.currency === 'USD' ? '$150' : 'A$150';
+  const lowest = variants.reduce<{ amount: string; currency: string } | null>((best, x) => {
+    const m = x.price;
+    return m && (!best || BigInt(m.amount) < BigInt(best.amount)) ? m : best;
+  }, null);
   return (
     <div className="container">
+      {lowest ? (
+        <TrackViewItem productId={product.id} currency={lowest.currency} value={lowest.amount} />
+      ) : null}
       <nav aria-label="Breadcrumb" className="page-head" style={{ paddingBottom: '1.25rem' }}>
         <ol className="crumbs" style={{ margin: 0 }}>
           <li>

@@ -156,6 +156,9 @@ export const orders = pgTable('orders', {
   shippingAddress: jsonb('shipping_address').notNull(),
   billingAddress: jsonb('billing_address').notNull(),
   shippingMethod: text('shipping_method'),
+  consent: jsonb('consent')
+    .notNull()
+    .default(sql`'{"analytics": false, "marketing": false}'::jsonb`),
   placedAt: timestamp('placed_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

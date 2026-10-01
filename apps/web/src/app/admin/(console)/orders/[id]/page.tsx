@@ -33,7 +33,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               <h2 id="items">Items</h2>
               <span className="muted">Placed {when(order.placedAt)}</span>
             </div>
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Order items">
               <table className="t">
                 <thead>
                   <tr>
@@ -82,7 +82,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             {payments.length === 0 ? (
               <div className="empty">No payment started yet.</div>
             ) : (
-              <div className="table-wrap">
+              <div className="table-wrap" tabIndex={0} role="region" aria-label="Payments">
                 <table className="t">
                   <thead>
                     <tr>

@@ -19,7 +19,7 @@ export default async function Pages() {
           {rows.length === 0 ? (
             <Empty>No pages yet.</Empty>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Pages">
               <table className="t">
                 <thead>
                   <tr>

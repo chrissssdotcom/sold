@@ -1,5 +1,5 @@
 import type { OrderService } from '@sold/commerce';
-import type { PrimaryDb } from '@sold/db';
+import { eq, inArray, schema, type PrimaryDb } from '@sold/db';
 import type { NotificationService } from './service';
 
 export interface OutboxEventLike {
@@ -14,6 +14,10 @@ export interface ConsumerDeps {
   orders: OrderService;
   /** Absolute link a customer can open to see this order (signed: guests have no account). */
   orderUrl(orderId: string): string;
+  /** Absolute storefront URL for a product handle (review requests link to the product page). */
+  productUrl(handle: string): string;
+  /** Ask for a review this many days after delivery. 0 or absent: never. */
+  reviewRequestDays?: number;
 }
 
 const wire = (m: {
@@ -59,6 +63,32 @@ export async function notifyOnEvent(deps: ConsumerDeps, e: OutboxEventLike): Pro
     const to = String(p['to']);
     const template =
       to === 'shipped' ? 'order-shipped' : to === 'cancelled' ? 'order-cancelled' : null;
+    if (to === 'delivered') {
+      // Optional follow-up: a review request, delayed. Off unless the operator set `notifications.reviewRequestDays`.
+      const days = deps.reviewRequestDays ?? 0;
+      if (days <= 0) return false;
+      const o = await deps.orders.get(deps.db, orderId);
+      const variantIds = o.lines.map((l) => l.variantId).filter((v): v is string => v !== null);
+      if (variantIds.length === 0) return false;
+      const rows = await deps.db
+        .selectDistinct({ handle: schema.products.handle, title: schema.products.title })
+        .from(schema.productVariants)
+        .innerJoin(schema.products, eq(schema.products.id, schema.productVariants.productId))
+        .where(inArray(schema.productVariants.id, variantIds))
+        .limit(20);
+      if (rows.length === 0) return false;
+      await deps.notify.enqueue(deps.db, {
+        dedupeKey: `${e.eventId}:review-request`,
+        template: 'review-request',
+        to: o.email,
+        delaySeconds: days * 86_400,
+        data: {
+          orderNumber: o.number,
+          items: rows.map((r) => ({ title: r.title, url: deps.productUrl(r.handle) })),
+        },
+      });
+      return true;
+    }
     if (to === 'refunded') {
       const o = await deps.orders.get(deps.db, orderId);
       await deps.notify.enqueue(deps.db, {

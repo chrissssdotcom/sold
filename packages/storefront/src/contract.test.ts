@@ -22,6 +22,8 @@ const full: ThemeComponents = {
   CheckoutPage: C,
   OrderPage: C,
   NotFoundPage: C,
+  AuthPage: C,
+  AccountPage: C,
 } as unknown as ThemeComponents;
 const base = defineTheme({
   name: 'base',

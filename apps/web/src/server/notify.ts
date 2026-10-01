@@ -44,3 +44,8 @@ export function orderLink(env: Env): (orderId: string) => string {
     return `${publicUrl(env)}/${markets[0]!.slug}/order/${token}`;
   };
 }
+
+/** Absolute storefront URL for a product handle. */
+export function productLink(env: Env): (handle: string) => string {
+  return (handle) => `${publicUrl(env)}/${markets[0]!.slug}/products/${encodeURIComponent(handle)}`;
+}

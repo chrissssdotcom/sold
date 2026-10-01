@@ -4,20 +4,20 @@ Live status. Update at every green checkpoint.
 
 ## Status
 
-| Phase                                          | State                                                                         |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- |
-| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done                                                                          |
-| Phase 0: Foundations                           | **built; not signed off** (see "Pending in Phase 0": no Docker, k6, or cloud) |
-| Phase 1: Extension SDK and Base kernel         | **built; under independent review** (see "Phase 1 evidence")                  |
-| Phase 2: Commerce core                         | **built and tested; independent review incomplete** (see "Phases 2-5 status") |
-| Phase 3: Payments and multi-currency           | **built and tested; Stripe only against a local fake**                        |
-| Phase 4: Storefront and page builder           | **built, modular themes, admin editor done** (see "Phases 2-5 status")        |
-| Phase 5: Identity and admin                    | **built; OIDC/SAML/SCIM only against local fakes** (see "Phases 2-5 status")  |
-| Phase 6: Social and growth                     | not started                                                                   |
-| Phase 7: Data and platform                     | not started                                                                   |
-| Phase 8: Hardening, scale proof, handover      | not started                                                                   |
+| Phase                                          | State                                                                                                                                                            |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done                                                                                                                                                             |
+| Phase 0: Foundations                           | **built; not signed off** (see "Pending in Phase 0": no Docker, k6, or cloud)                                                                                    |
+| Phase 1: Extension SDK and Base kernel         | **built; under independent review** (see "Phase 1 evidence")                                                                                                     |
+| Phase 2: Commerce core                         | **built and tested; independent review incomplete** (see "Phases 2-5 status")                                                                                    |
+| Phase 3: Payments and multi-currency           | **built and tested; Stripe only against a local fake**                                                                                                           |
+| Phase 4: Storefront and page builder           | **built, modular themes, admin editor done** (see "Phases 2-5 status")                                                                                           |
+| Phase 5: Identity and admin                    | **built; OIDC/SAML/SCIM only against local fakes** (see "Phases 2-5 status")                                                                                     |
+| Phase 6: Social and growth                     | **partly built**: notifications, reviews, consent, TikTok, review-request email (see docs/social-growth.md); search, loyalty programme, referrals, A/B not built |
+| Phase 7: Data and platform                     | not started                                                                                                                                                      |
+| Phase 8: Hardening, scale proof, handover      | not started                                                                                                                                                      |
 
-Phases 6-8 are not started and this file does not claim otherwise. Every "verified" claim below names what was run.
+Phases 7-8 are not started and this file does not claim otherwise; Phase 6 is partly built (see its row). Every "verified" claim below names what was run.
 
 ## Independent review
 
@@ -170,6 +170,8 @@ Threat model, security review, full k6/chaos suite and capacity report, waiting 
 | 3 Payments and multi-currency | Built and tested; Stripe adapter verified only against a local fake, not Stripe                                                                                                                                                                                                                                                                                                                                                                        | payments unit 30, integration 26                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 4 Storefront and page builder | Storefront, modular themes (`defineTheme`, `theme:new`), blocks, versioned pages, customer accounts, admin editor                                                                                                                                                                                                                                                                                                                                      | web unit 72; storefront e2e 4 (axe, light+dark, incl. account pages) on a dev server; production-build run earlier (docs/storefront.md, docs/theming.md)                                                                                                                                                                                                                                                                                                                                |
 | 5 Identity and admin          | Users, sessions, RBAC (`can`), audit log, OIDC, SAML SP, SCIM 2.0, owner bootstrap CLI, admin API (23 routes), admin console (dashboard, products, orders+refunds, page builder with live preview, promotions, theme, staff and roles, audit). **Never run against a real IdP** (Keycloak/Entra not available here); no break-glass flow; audit log is append-only but **not hash-chained**; session/replay sweeps are not yet scheduled in the worker | identity unit 10 + integration 63 (login throttling, session rules, RBAC, last-owner protection, OIDC/SAML/SCIM against local fakes incl. forged/replayed/expired assertions); admin API e2e 8 (authn, CSRF, permission matrix, writes, audit); admin UI e2e 5 in Chromium (axe 0 violations on every screen, light and dark; builder save/preview/publish/live round trip; guard that storefront CSS cannot leak into the console); account e2e 4. See docs/identity.md, docs/admin.md |
+
+| 6 Social and growth (partial) | `@sold/notify` (durable email, SMTP/Postmark/console, templates), `reviews`, `tiktok-social`, cookie consent with per-order record, extension UI wiring (blocks, slots, admin screens, route audiences, extension RBAC), extension settings console | notify unit 14 + integration 13; reviews e2e 6 (HTTP + browser, axe); consent e2e 6 (Chromium: gating, GPC, order record, axe light+dark); tiktok unit 7 + a live local run through worker to a fake TikTok. **Pixel, Events API and Postmark never run against the real services.** No search, loyalty programme, referrals, A/B hooks. See docs/notifications.md, docs/social-growth.md |
 
 ## Phase 1 review round 2 (independent adversarial review of the extension framework)
 

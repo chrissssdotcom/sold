@@ -5,7 +5,8 @@ import type { JobQueue } from '@sold/core/jobs';
 import type { PrimaryDb } from '@sold/db';
 import { SamlClient, SessionService } from '@sold/identity';
 import { notifyOnEvent } from '@sold/notify';
-import { buildNotifications, buildTransport, orderLink } from '../src/server/notify';
+import instanceConfig from '../../../sold.config';
+import { buildNotifications, buildTransport, orderLink, productLink } from '../src/server/notify';
 import { buildPayments } from '../src/server/payments';
 
 interface Log {
@@ -42,6 +43,7 @@ export async function startCommerceJobs(opts: {
   const notify = buildNotifications(opts.env);
   const transport = buildTransport(opts.env);
   const orderUrl = orderLink(opts.env);
+  const productUrl = productLink(opts.env);
   if (!transport)
     log.warn(
       {},
@@ -73,7 +75,17 @@ export async function startCommerceJobs(opts: {
 
   const publish = async (e: RelayEvent): Promise<void> => {
     // Internal consumers first (idempotent by event id), then extensions. A failure here retries the whole event.
-    await notifyOnEvent({ db, notify, orders: commerce.orders, orderUrl }, e);
+    await notifyOnEvent(
+      {
+        db,
+        notify,
+        orders: commerce.orders,
+        orderUrl,
+        productUrl,
+        reviewRequestDays: instanceConfig.notifications.reviewRequestDays,
+      },
+      e,
+    );
     // Events no extension can subscribe to are still "published" (nothing to deliver).
     if (!KNOWN_EVENTS.has(e.eventType)) return;
     await opts.publish(e.eventType as EventName, e.payload as never, { eventId: e.eventId });

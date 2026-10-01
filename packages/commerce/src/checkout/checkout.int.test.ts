@@ -203,6 +203,36 @@ describe('placing an order', () => {
     expect(Number(openCarts.n)).toBe(280);
   }, 120_000);
 
+  it('records what the customer consented to with the order, and says so in the event; no statement means no consent', async () => {
+    const { variantId } = await seedVariant(db, { onHand: 5, price: 1500n });
+    const yes = await commerce.checkout.place(
+      db.primary,
+      request(await cartWith(variantId, 1), { consent: { analytics: true, marketing: true } }),
+      key(),
+    );
+    const no = await commerce.checkout.place(
+      db.primary,
+      request(await cartWith(variantId, 1)),
+      key(),
+    );
+    const consentOf = async (id: string) =>
+      (
+        await one<{ consent: { analytics: boolean; marketing: boolean } }>(
+          sql`SELECT consent FROM orders WHERE id = ${id}`,
+        )
+      ).consent;
+    expect(await consentOf(yes.order.orderId)).toEqual({ analytics: true, marketing: true });
+    expect(await consentOf(no.order.orderId)).toEqual({ analytics: false, marketing: false });
+    const evt = async (id: string) =>
+      (
+        await one<{ payload: { marketingConsent: boolean } }>(
+          sql`SELECT payload FROM outbox_events WHERE aggregate_id = ${id} AND event_type = 'order.placed'`,
+        )
+      ).payload;
+    expect((await evt(yes.order.orderId)).marketingConsent).toBe(true);
+    expect((await evt(no.order.orderId)).marketingConsent).toBe(false);
+  });
+
   it('refuses when the price moves between review and confirm (quote_changed) and writes nothing', async () => {
     const { variantId } = await seedVariant(db, { onHand: 5, price: 1000n });
     const cartId = await cartWith(variantId, 1);

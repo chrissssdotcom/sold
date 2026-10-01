@@ -255,6 +255,7 @@ describe('order events -> emails (through the real outbox relay)', () => {
     notify,
     orders: commerce.orders,
     orderUrl: (id: string) => `https://shop.example/en-au/order/${id}`,
+    productUrl: (h: string) => `https://shop.example/en-au/products/${h}`,
   });
 
   it('order.placed queues exactly one confirmation, even when the event is delivered twice', async () => {
@@ -331,5 +332,68 @@ describe('stats', () => {
     const s = await notify.stats(db.primary);
     expect(s.failed).toBeGreaterThanOrEqual(2);
     expect(typeof s.queued).toBe('number');
+  });
+});
+
+describe('review requests', () => {
+  const au = {
+    line1: '1 George St',
+    city: 'Sydney',
+    region: 'NSW',
+    postalCode: '2000',
+    country: 'AU',
+  };
+  const deps = (days: number) => ({
+    db: db.primary,
+    notify,
+    orders: commerce.orders,
+    orderUrl: (id: string) => `https://shop.example/en-au/order/${id}`,
+    productUrl: (h: string) => `https://shop.example/en-au/products/${h}`,
+    reviewRequestDays: days,
+  });
+  async function deliveredOrder(email: string) {
+    const { variantId } = await seedVariant(db, { onHand: 5, price: 1000n, title: 'Candle' });
+    const cart = await commerce.carts.create(db.primary, { currency: 'AUD' });
+    await commerce.carts.addItem(db.primary, cart.id, variantId, 1);
+    const { order } = await commerce.checkout.place(
+      db.primary,
+      { cartId: cart.id, email, shippingAddress: au, shippingMethodId: 'standard' },
+      `rr-${key()}`,
+    );
+    return order;
+  }
+
+  it('is off by default; when on, queues one delayed email linking to the product page', async () => {
+    const email = `rr-${key()}@example.test`;
+    const order = await deliveredOrder(email);
+    const ev = {
+      eventId: `evt-${key()}`,
+      eventType: 'order.status_changed',
+      payload: { orderId: order.orderId, from: 'shipped', to: 'delivered' },
+    };
+    expect(await notifyOnEvent(deps(0), ev)).toBe(false);
+    const t = new MemoryTransport();
+    await notify.deliverDue(db.primary, t, { batch: 200 });
+    expect(t.sent.some((m) => m.to === email)).toBe(false);
+
+    expect(await notifyOnEvent(deps(7), ev)).toBe(true);
+    expect(await notifyOnEvent(deps(7), ev)).toBe(true); // redelivery: still one row
+    const rows = (
+      await db.primary.execute<{ available_at: string }>(
+        sql`SELECT available_at FROM notifications WHERE to_email = ${email} AND template = 'review-request'`,
+      )
+    ).rows;
+    expect(rows).toHaveLength(1);
+    const delayDays = (new Date(rows[0]!.available_at).getTime() - Date.now()) / 86_400_000;
+    expect(delayDays).toBeGreaterThan(6.9);
+    expect(delayDays).toBeLessThan(7.1);
+    await notify.deliverDue(db.primary, t, { batch: 200 });
+    expect(t.sent.some((m) => m.to === email)).toBe(false); // not due yet
+    await db.primary.execute(
+      sql`UPDATE notifications SET available_at = now() - interval '1 second' WHERE to_email = ${email}`,
+    );
+    await notify.deliverDue(db.primary, t, { batch: 200 });
+    const sent = t.sent.find((m) => m.to === email)!;
+    expect(sent.html).toContain('https://shop.example/en-au/products/p-');
   });
 });

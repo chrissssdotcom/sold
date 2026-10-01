@@ -11,3 +11,4 @@ import './sections.css';
 import './product.css';
 import './cart-checkout.css';
 import './footer.css';
+import './consent.css';

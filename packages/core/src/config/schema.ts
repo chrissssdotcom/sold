@@ -88,6 +88,16 @@ export const soldConfigSchema = z
      * Commerce behaviour that is a business decision rather than code. Shipping zones and tax tables are validated by
      * `@sold/commerce` (`parseShippingConfig`, `parseTaxTable`) so this package stays free of domain dependencies.
      */
+    /** Customer email behaviour beyond the always-on order and welcome emails. */
+    notifications: z
+      .object({
+        /**
+         * Ask for a review this many days after an order is marked delivered. 0 (default) = never. Turn on together with
+         * the `reviews` extension: the email links to the product page where its form lives.
+         */
+        reviewRequestDays: z.number().int().min(0).max(90).default(0),
+      })
+      .default({ reviewRequestDays: 0 }),
     commerce: z
       .object({
         /** Where goods ship from (drives origin-sourced tax rules). */

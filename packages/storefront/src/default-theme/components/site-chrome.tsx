@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CartButton } from './cart-drawer';
+import { ConsentSettingsLink } from '../../kit/consent';
 import { MarketSwitcher } from './market-switcher';
 import { User } from '../../kit/icons';
 import type { ChromeProps } from '../../contract';
@@ -98,6 +99,7 @@ export function SiteFooter({ market, site }: ChromeProps) {
         <small>
           © {new Date().getFullYear()} {name}. Prices in {market.currency}.
         </small>
+        <ConsentSettingsLink className="link-btn" />
         <small>Built on Sold</small>
       </div>
     </footer>

@@ -8,7 +8,8 @@
     "./kit": "./src/kit/index.ts",
     "./blocks": "./src/blocks/index.ts",
     "./default-theme": "./src/default-theme/index.ts",
-    "./i18n": "./src/kit/i18n.ts"
+    "./i18n": "./src/kit/i18n.ts",
+    "./consent": "./src/kit/consent-cookie.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

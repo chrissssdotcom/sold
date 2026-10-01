@@ -149,6 +149,7 @@ export class CheckoutService {
         cartId: cart.id,
         customerId: input.customerId,
         email: input.email.toLowerCase(),
+        consent: input.consent,
         currency: quote.currency,
         subtotal: quote.subtotal.amount,
         discountTotal: quote.discountTotal.amount,
@@ -223,6 +224,7 @@ export class CheckoutService {
         customerId: input.customerId,
         total: { amount: quote.total.amount, currency: quote.currency },
         placedAt: order.placedAt,
+        marketingConsent: input.consent.marketing,
       },
     });
 

@@ -23,5 +23,9 @@ export const placeOrderInput = z.strictObject({
   billingAddress: addressSchema.optional(),
   shippingMethodId: z.string().min(1).max(64),
   customerTaxExempt: z.boolean().default(false),
+  /** What the customer agreed to in the cookie banner when they placed the order. Nothing unless stated. */
+  consent: z
+    .strictObject({ analytics: z.boolean().default(false), marketing: z.boolean().default(false) })
+    .default({ analytics: false, marketing: false }),
 });
 export type PlaceOrderInput = z.input<typeof placeOrderInput>;

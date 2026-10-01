@@ -187,6 +187,13 @@ export async function dashboard(db: PrimaryDb) {
   };
 }
 
+export async function orderConsent(db: PrimaryDb, orderId: string) {
+  const r = await db.execute<{ consent: { analytics: boolean; marketing: boolean } }>(
+    sql`SELECT consent FROM orders WHERE id = ${orderId}`,
+  );
+  return r.rows[0]?.consent ?? { analytics: false, marketing: false };
+}
+
 export async function orderPayments(db: PrimaryDb, orderId: string) {
   const r = await db.execute<{
     id: string;

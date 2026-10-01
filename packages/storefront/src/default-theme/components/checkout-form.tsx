@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney, type MoneyJson } from '../../kit/money';
 import { useCart } from '../../kit/cart-provider';
+import { emitStorefrontEvent } from '../../kit/events';
 import { Arrow, Bag } from '../../kit/icons';
 
 const COUNTRIES = [
@@ -240,7 +241,10 @@ export function CheckoutForm({
     idem.current ||= sessionStorage.getItem('sold_idem') || crypto.randomUUID();
     sessionStorage.setItem('sold_idem', idem.current);
     try {
-      const placed = await post<{ orderToken: string; order: { number: string } }>(
+      const placed = await post<{
+        orderToken: string;
+        order: { id: string; number: string; total: { amount: string; currency: string } };
+      }>(
         '/api/checkout',
         {
           email: form.email.trim(),
@@ -277,6 +281,13 @@ export function CheckoutForm({
         return;
       }
       sessionStorage.removeItem('sold_idem');
+      // Once, at placement: the server-side conversion event uses the same order id so a pixel can de-duplicate the pair.
+      emitStorefrontEvent({
+        type: 'purchase',
+        orderId: placed.data.order.id,
+        currency: placed.data.order.total.currency,
+        value: placed.data.order.total.amount,
+      });
       const token = placed.data.orderToken;
       const paid = await post<{ payment: { instructions?: string; redirectUrl?: string } }>(
         '/api/checkout/pay',

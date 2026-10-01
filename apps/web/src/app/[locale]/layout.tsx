@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import type { CSSProperties, ReactNode } from 'react';
 import { darkTokensCss } from '@sold/storefront';
 import { markets, marketFor } from '@sold/storefront/i18n';
-import { CartProvider } from '@sold/storefront/kit';
+import { CartProvider, ConsentBanner } from '@sold/storefront/kit';
 import instanceConfig from '../../../../../sold.config';
 import { ExtensionSlot } from '../../server/extension-ui';
 import { getThemeTokens } from '../../storefront/data';
@@ -72,6 +72,7 @@ export default async function StoreLayout({
           <Footer market={market} site={site} />
           <CartDrawer market={market} />
           <ExtensionSlot name="storefront.footer" props={{}} />
+          <ConsentBanner />
         </CartProvider>
       </body>
     </html>

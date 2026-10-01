@@ -93,7 +93,7 @@ export function UsersAdmin(p: {
         <div className="card-h">
           <h2>Staff</h2>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Staff">
           <table className="t">
             <thead>
               <tr>
@@ -247,7 +247,7 @@ export function UsersAdmin(p: {
           <div className="card-h">
             <h2>Roles</h2>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Roles">
             <table className="t">
               <tbody>
                 {p.roles.map((r) => (

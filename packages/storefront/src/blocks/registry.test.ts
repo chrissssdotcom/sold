@@ -20,6 +20,8 @@ const components = Object.fromEntries(
     'CheckoutPage',
     'OrderPage',
     'NotFoundPage',
+    'AuthPage',
+    'AccountPage',
   ].map((k) => [k, C]),
 ) as unknown as ThemeComponents;
 const blocks = Object.fromEntries(baseBlockMeta.map((m) => [m.type, (() => m.type) as never]));

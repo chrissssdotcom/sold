@@ -8,6 +8,10 @@ export const dynamic = 'force-dynamic';
 export const GET = adminRoute('orders:read', async (req, { db }) => {
   const id = parseId(new URL(req.url).pathname.split('/').pop());
   const { orders } = await getCommerce();
-  const [order, payments] = await Promise.all([orders.get(db, id), q.orderPayments(db, id)]);
-  return json({ order, payments });
+  const [order, payments, consent] = await Promise.all([
+    orders.get(db, id),
+    q.orderPayments(db, id),
+    q.orderConsent(db, id),
+  ]);
+  return json({ order, payments, consent });
 });

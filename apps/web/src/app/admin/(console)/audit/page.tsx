@@ -39,7 +39,7 @@ export default async function Audit({
         {items.length === 0 ? (
           <Empty>No entries.</Empty>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Audit log">
             <table className="t">
               <thead>
                 <tr>

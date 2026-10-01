@@ -368,7 +368,7 @@ export class SettingsService {
   }
 
   /**
-   * Patch settings. Absent keys are unchanged; for a secret, `null` clears it. The merged result is
+   * Patch settings. Absent keys are unchanged; `null` clears a secret and resets any other key to its default (or unsets it). The merged result is
    * validated before anything is written, so a bad patch leaves the store untouched.
    */
   async set(
@@ -405,7 +405,8 @@ export class SettingsService {
     const merged: Record<string, unknown> = { ...current };
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined) continue;
-      if (v === null && secrets.has(k)) delete merged[k];
+      // `null` means "forget my value": a secret is cleared, anything else falls back to its schema default (or unset).
+      if (v === null) delete merged[k];
       else merged[k] = v;
     }
     const parsed = def.schema.safeParse(merged);
@@ -428,8 +429,8 @@ export class SettingsService {
               this.context(extension, k),
             ),
           });
-      } else if (parsed.data[k] === undefined || parsed.data[k] === null) {
-        // An unset optional field has no row: `value` and `ciphertext` cannot both be NULL.
+      } else if (v === null || parsed.data[k] === undefined || parsed.data[k] === null) {
+        // Reset to default, or an unset optional field: no row: `value` and `ciphertext` cannot both be NULL.
         remove.push(k);
       } else {
         upsert.push({ key: k, value: parsed.data[k], ciphertext: null });

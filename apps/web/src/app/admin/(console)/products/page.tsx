@@ -68,7 +68,7 @@ export default async function Products({
         {items.length === 0 ? (
           <Empty>No products match.</Empty>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Products">
             <table className="t">
               <thead>
                 <tr>

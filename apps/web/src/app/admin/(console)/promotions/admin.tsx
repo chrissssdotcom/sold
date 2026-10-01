@@ -59,7 +59,7 @@ export function PromotionsAdmin({ rows, canWrite }: { rows: Row[]; canWrite: boo
   return (
     <div className="grid cols-2" style={{ alignItems: 'start' }}>
       <div className="card">
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Promotions">
           <table className="t">
             <thead>
               <tr>

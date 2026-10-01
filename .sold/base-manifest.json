@@ -7,6 +7,8 @@
     "upgrades/**",
     "extensions/_template/**",
     "extensions/loyalty-points/**",
+    "extensions/reviews/**",
+    "extensions/tiktok-social/**",
     "ops/docker/**",
     "ops/grafana/**",
     "ops/k8s/**",

@@ -100,6 +100,15 @@ describe('SettingsService', () => {
     expect((await svc.get('loyalty')).apiToken).toBeUndefined();
   });
 
+  it('null resets a defaulted setting to its default and unsets an optional one (instead of failing validation)', async () => {
+    const { svc, store } = setup();
+    await svc.set('loyalty', { programName: 'Club', pointsPerDollar: 5 }, 'a');
+    await svc.set('loyalty', { programName: null }, 'a');
+    expect(await svc.get('loyalty')).toMatchObject({ programName: 'Rewards', pointsPerDollar: 5 });
+    // No stored row for the reset key: a future change to the default takes effect.
+    expect((await store.load('loyalty')).map((r) => r.key)).toEqual(['pointsPerDollar']);
+  });
+
   it('validates before writing: a bad patch changes nothing', async () => {
     const { svc, store } = setup();
     await expect(svc.set('loyalty', { pointsPerDollar: 1000 }, 'a')).rejects.toBeInstanceOf(

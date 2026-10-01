@@ -23,12 +23,17 @@ const config = (extensions: unknown[]) =>
   });
 
 describe('discoverExtensions (against the real repository)', () => {
-  it('discovers loyalty-points as a first-party extension with its migrations', async () => {
-    const r = await discoverExtensions(repoRoot, async () => config(['loyalty-points']));
+  it('discovers the first-party extensions with their migrations', async () => {
+    const r = await discoverExtensions(repoRoot, async () =>
+      config(['loyalty-points', 'reviews', 'tiktok-social']),
+    );
     expect(r.extensions.map((e) => [e.name, e.origin, e.enabled])).toEqual([
       ['loyalty-points', 'first-party', true],
+      ['reviews', 'first-party', true],
+      ['tiktok-social', 'first-party', true],
     ]);
     expect(r.extensions[0]?.migrationFiles).toEqual(['0001_init.sql']);
+    expect(r.extensions[1]?.migrationFiles).toEqual(['0001_init.sql']);
     expect(r.services).toEqual({ 'pricing.rounding': 'charm-pricing' });
     expect(r.warnings).toEqual([]);
   });

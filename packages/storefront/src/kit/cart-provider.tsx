@@ -10,6 +10,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
+import { emitStorefrontEvent } from './events';
 import type { MoneyJson } from './money';
 
 export interface CartItem {
@@ -219,6 +220,12 @@ export function CartProvider({ currency, children }: { currency: string; childre
           });
         });
         if (ok) {
+          emitStorefrontEvent({
+            type: 'add_to_cart',
+            variantId,
+            quantity,
+            currency: currencyRef.current,
+          });
           dispatch({
             type: 'notice',
             message: label ? `${label} added to your bag` : 'Added to your bag',
