@@ -28,3 +28,12 @@ stale `pending_payment` orders, no negative stock, and lists variants with ≤ 5
 
 Watch checkout 5xx and p95, DB pool waiting, oldest critical job age. Escalate shedding in order: reporting → admin → account → browse; never touch
 checkout. Turn rungs off in reverse once the queue and pool recover. Afterwards run the script again and record the peak in the capacity report.
+
+## Dry run (2026-10-01, local production build)
+
+`EXPECT_ENV=local ops/drills/sale-readiness.sh` against the standalone production build with the worker running: all automated checks PASS
+(readiness, build id, noindex in non-prod, HSTS, CSP without `unsafe-eval`, no `degrade.*`/`shed.*` flag on, outbox drained, no failed/stuck email,
+no payment needing attention, no stale pending orders, no negative stock). **Without the worker running, the same script correctly reported
+FAIL** (outbox events older than 5 minutes) and a WARN for stuck emails: that is the failure it exists to catch. It was also the first thing
+to notice that the script itself followed no redirects (`/` redirects to the market page), which hid the CSP and robots headers; fixed.
+This proves the script, not a real sale environment: the manual list above is still entirely yours.
