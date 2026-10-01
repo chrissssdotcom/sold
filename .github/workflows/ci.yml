@@ -141,6 +141,9 @@ jobs:
       REDIS_URL: redis://localhost:6379
       SOLD_ENVIRONMENT: local
       PORT: 3000
+      # The standalone server runs as NODE_ENV=production, which ENFORCES per-extension database roles; they must be provisioned
+      # by the migrate step, exactly as in a real deploy. A throwaway value: this database lives only for the job.
+      SOLD_EXTENSION_DB_SECRET: ci-only-throwaway-secret-for-extension-roles-0123456789
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -149,18 +152,27 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:migrate
+      - run: NODE_ENV=production pnpm db:migrate
       - run: pnpm --filter @sold/web build
       - name: Start the standalone server
         run: |
           cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
           node apps/web/.next/standalone/apps/web/server.js > server.log 2>&1 &
           for i in $(seq 1 30); do curl -sf localhost:3000/api/health/ready && break || sleep 1; done
+      - name: Start the worker bundle (it must boot; the single-file CJS bundle has failed here before)
+        run: |
+          (cd apps/web && SOLD_ROLE=worker PORT=3001 NODE_ENV=production node .generated/worker.cjs > ../../worker.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf localhost:3001/ready && break || sleep 1; done
+          curl -sf localhost:3001/ready
+      - name: Sale-readiness checks (read-only)
+        run: EXPECT_ENV=local ops/drills/sale-readiness.sh || true
       - uses: grafana/setup-k6-action@v1
       - name: Baseline browse (thresholds are the pass/fail contract)
         run: k6 run -e BASE_URL=http://localhost:3000 ops/loadtests/baseline-browse.js
       - if: failure()
-        run: tail -n 100 server.log
+        run: |
+          tail -n 100 server.log
+          tail -n 100 worker.log
 
   # The image has never been built by the agent that wrote the Dockerfile (no Docker daemon there): CI must.
   docker:

@@ -7,15 +7,15 @@
 
 ## Service level objectives (design targets, `event-scale`)
 
-| Objective                                      | Target                                                             | Evidence required                       | Evidence today                                     |
-| ---------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------- | -------------------------------------------------- |
-| Availability, storefront browsing and checkout | 99.95%                                                             | SLO burn-rate alerts + chaos drills     | none                                               |
-| Cache-hit page TTFB at the edge                | p95 < 200 ms                                                       | edge analytics under the spike scenario | none                                               |
-| Origin on a cache miss                         | p95 < 400 ms                                                       | k6 scenario 7 (cache-cold)              | k6 scenario 1 threshold defined, not yet run in CI |
-| Cart and checkout APIs at peak                 | p95 < 500 ms, p99 < 1.5 s                                          | k6 scenarios 2 and 3                    | none                                               |
-| Step increase                                  | 50x in 60 s, no errors on cached routes, no order loss             | k6 scenario 2                           | none                                               |
-| Order throughput                               | >= 1,000 orders/min per instance, no oversell, documented headroom | k6 scenario 3 (5,000 buyers, 100 units) | none                                               |
-| RPO / RTO                                      | <= 5 min / <= 1 h                                                  | restore and failover drills             | none                                               |
+| Objective                                      | Target                                                             | Evidence required                       | Evidence today                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Availability, storefront browsing and checkout | 99.95%                                                             | SLO burn-rate alerts + chaos drills     | none                                                                                         |
+| Cache-hit page TTFB at the edge                | p95 < 200 ms                                                       | edge analytics under the spike scenario | none                                                                                         |
+| Origin on a cache miss                         | p95 < 400 ms                                                       | k6 scenario 7 (cache-cold)              | k6 scenario 1 threshold defined, not yet run in CI                                           |
+| Cart and checkout APIs at peak                 | p95 < 500 ms, p99 < 1.5 s                                          | k6 scenarios 2 and 3                    | none                                                                                         |
+| Step increase                                  | 50x in 60 s, no errors on cached routes, no order loss             | k6 scenario 2                           | local only: 2 → 100 workers, 0 errors in ~13k requests (`capacity-report.md`)                |
+| Order throughput                               | >= 1,000 orders/min per instance, no oversell, documented headroom | k6 scenario 3 (5,000 buyers, 100 units) | local only, see `capacity-report.md` (no oversell holds; throughput below)                   |
+| RPO / RTO                                      | <= 5 min / <= 1 h                                                  | restore and failover drills             | procedure verified on a local DB only (`runbooks/backup-restore.md`); no PITR/failover drill |
 
 ## Capacity model
 
@@ -86,7 +86,9 @@ PENDING(phase-8)).
 - **Tag stale windows.** `revalidateTag(tag, { expire })` is treated as immediate expiry by the shared cache handler;
   stale-while-revalidate on tag invalidation is not implemented (Phase 4).
 - **No DB circuit breaker and an unbounded pool wait queue** in `@sold/db`. Under primary loss requests wait on the pool
-  until their own timeouts. Planned for Phase 8 with the dependency-failure scenario.
+  until their own timeouts. Phase 8 drill (`chaos-drills.md`): with the database **stopped** (connection refused) requests failed fast and
+  cleanly as 503s, so the missing breaker did not hurt there. A **blackholed** database (packets dropped, connect hangs) was not tested and
+  is the case the breaker and a bounded pool wait would matter for. Still open.
 - **Very large cache entries** (multi-MB) cost event-loop time to serialise; the store scales its timeout with size but
   does not compress or stream.
 - **Tag times live in one Redis hash** (`sold:cache:tags`) that is not TTL'd (so `volatile-lru` never evicts it). It needs a
@@ -94,17 +96,24 @@ PENDING(phase-8)).
 
 ## Degradation ladder
 
-Feature flags seeded by `pnpm db:seed`, all OFF by default, reversible without a deploy. Applied in order under load:
+Feature flags seeded by `pnpm db:seed`, all OFF by default, reversible without a deploy. **What is actually enforced today:**
 
-1. `degrade.disable-social-and-reviews`
-2. `degrade.simplify-recommendations-facets`
-3. `degrade.serve-stale-search`
-4. `degrade.pause-non-essential-jobs` (the worker already honours this)
-5. `degrade.waiting-room`
+| Rung | Flag                                      | Behaviour behind it                                                                         |
+| ---- | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1    | `degrade.disable-social-and-reviews`      | **none yet**: seeded and documented only                                                    |
+| 2    | `degrade.simplify-recommendations-facets` | **none yet** (there are no recommendations or facets to simplify)                           |
+| 3    | `degrade.serve-stale-search`              | **none yet** (there is no search)                                                           |
+| 4    | `degrade.pause-non-essential-jobs`        | **enforced** in the worker                                                                  |
+| 5    | `degrade.waiting-room`                    | **none in-app**; the Cloudflare waiting room is in the Terraform edge module, never applied |
 
-Load shedding order (lowest priority shed first, with `503` + `Retry-After`): reporting, admin, account, browse,
-cart, checkout. Classification lives in `@sold/core/traffic` (`routeClassOf`, `shouldShed`); enforcement arrives with
-the waiting-room extension (PENDING(phase-8)).
+**Load shedding is enforced** (`apps/web/src/server/route.ts`, `shedding.ts`). Turn on `shed.reporting`, `shed.admin`, `shed.account`,
+`shed.browse` or `shed.cart` (Admin > Flags, or `SOLD_SHED_BELOW=<class>` on the web app, which needs no database): that class and every
+lower-priority class answer `503` with `Retry-After: 30`. Priority, shed first: reporting < admin < account < browse < cart < **checkout**.
+**Checkout, health and metrics are never shed**, and `/api/admin/flags` plus `/api/admin/auth` stay reachable so an operator can always switch
+it off (flags are cached ~5 s per instance and fail static if the database is down). `@sold/core/traffic` classifies routes
+(`routeClassOf`, `shedBelowFrom`, `shouldShed`), unit-tested; `e2e/shedding.e2e.ts` exercises it live. Limits: it covers API routes
+wrapped by `route()`; cacheable storefront HTML is served from cache and is not shed in-app. Nothing flips these automatically: it is an
+operator (or future alert-driven) action, as the runbook describes.
 
 ## Queue
 
@@ -120,9 +129,13 @@ Real idle and active cost per profile is PENDING(phase-0, needs a cloud subscrip
 
 ## Capacity report
 
-| Tier | Throughput measured  | Limiting component | Cost per headroom | Recommended sizing | Date |
-| ---- | -------------------- | ------------------ | ----------------- | ------------------ | ---- |
-| all  | **not yet measured** | n/a                | n/a               | n/a                | n/a  |
+Measured numbers, their conditions and what they do **not** show are in [`capacity-report.md`](capacity-report.md). In short: one local
+machine, one web instance, everything sharing 4 vCPUs. **No cloud tier has been load tested**, so the per-tier table of sizing
+recommendations is still empty on purpose.
+
+| Tier | Throughput measured                                                                        | Limiting component | Cost per headroom | Recommended sizing | Date |
+| ---- | ------------------------------------------------------------------------------------------ | ------------------ | ----------------- | ------------------ | ---- |
+| all  | **not measured on any cloud tier** (local single-instance figures in `capacity-report.md`) | n/a                | n/a               | n/a                | n/a  |
 
 ## Job queue: measured behaviour and the Redis adapter (Phase 7)
 

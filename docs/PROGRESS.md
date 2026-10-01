@@ -4,18 +4,18 @@ Live status. Update at every green checkpoint.
 
 ## Status
 
-| Phase                                          | State                                                                                                                                                            |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done                                                                                                                                                             |
-| Phase 0: Foundations                           | **built; not signed off** (see "Pending in Phase 0": no Docker, k6, or cloud)                                                                                    |
-| Phase 1: Extension SDK and Base kernel         | **built; under independent review** (see "Phase 1 evidence")                                                                                                     |
-| Phase 2: Commerce core                         | **built and tested; independent review incomplete** (see "Phases 2-5 status")                                                                                    |
-| Phase 3: Payments and multi-currency           | **built and tested; Stripe only against a local fake**                                                                                                           |
-| Phase 4: Storefront and page builder           | **built, modular themes, admin editor done** (see "Phases 2-5 status")                                                                                           |
-| Phase 5: Identity and admin                    | **built; OIDC/SAML/SCIM only against local fakes** (see "Phases 2-5 status")                                                                                     |
-| Phase 6: Social and growth                     | **partly built**: notifications, reviews, consent, TikTok, review-request email (see docs/social-growth.md); search, loyalty programme, referrals, A/B not built |
-| Phase 7: Data and platform                     | not started                                                                                                                                                      |
-| Phase 8: Hardening, scale proof, handover      | not started                                                                                                                                                      |
+| Phase                                          | State                                                                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pre-work: AGENTS.md, CLAUDE.md, ADR-0001, plan | done                                                                                                                                                                                                                     |
+| Phase 0: Foundations                           | **built; not signed off** (see "Pending in Phase 0": no Docker, k6, or cloud)                                                                                                                                            |
+| Phase 1: Extension SDK and Base kernel         | **built; under independent review** (see "Phase 1 evidence")                                                                                                                                                             |
+| Phase 2: Commerce core                         | **built and tested; independent review incomplete** (see "Phases 2-5 status")                                                                                                                                            |
+| Phase 3: Payments and multi-currency           | **built and tested; Stripe only against a local fake**                                                                                                                                                                   |
+| Phase 4: Storefront and page builder           | **built, modular themes, admin editor done** (see "Phases 2-5 status")                                                                                                                                                   |
+| Phase 5: Identity and admin                    | **built; OIDC/SAML/SCIM only against local fakes** (see "Phases 2-5 status")                                                                                                                                             |
+| Phase 6: Social and growth                     | **partly built**: notifications, reviews, consent, TikTok, review-request email (see docs/social-growth.md); search, loyalty programme, referrals, A/B not built                                                         |
+| Phase 7: Data and platform                     | **built; Grafana, webhooks to real receivers, object storage never run** (see "Phases 7-8 evidence"). Not built: object-storage media adapter, audit hash chain, bounce ingestion                                        |
+| Phase 8: Hardening, scale proof, handover      | **partly done, nothing cloud-proven**: threat model, CSP, authz coverage, local load/chaos/backup/N-1 drills, runbooks. NOT done: any cloud load test, soak, PITR/failover drill, Docker/Terraform/Actions ever executed |
 
 Phases 7-8 are not started and this file does not claim otherwise; Phase 6 is partly built (see its row). Every "verified" claim below names what was run.
 
@@ -81,6 +81,32 @@ relocated directory in `NODE_ENV=production` with a stage-like environment.
 | Live processes             | Web + worker against Postgres/Redis: readiness includes the extension kernel, `401` on protected routes without an actor, `404/405`, traversal `404`, per-extension metrics. **Running the worker found a real bug** (illegal pg-boss schedule key) that unit tests missed; the in-memory queue now enforces the same naming rules |
 | Scaffold                   | A freshly generated extension loads, its migration lints clean, its own unit test passes and it type-checks                                                                                                                                                                                                                        |
 | Docs                       | `docs/extending.md` code blocks are verified against the real loyalty-points source by a test                                                                                                                                                                                                                                      |
+
+## Phases 7-8 evidence (what was actually run, in this sandbox)
+
+| Area                       | Verified by running                                                                                                                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reporting                  | `reporting` schema read as the `sold_grafana` role only; PII-free column test; extension views synced by `ext:migrate`                                                                              |
+| Public API and webhooks    | Scoped API keys (bearer only), OpenAPI generated from the same Zod schemas, HMAC-signed webhooks with a connect-time SSRF guard; unit, integration and `public-api.e2e.ts`                          |
+| Media                      | Decode-validate, re-encode, metadata stripped, bomb guard, dedupe, immutable serving; `media.e2e.ts`. `sharp` upgraded to 0.35 for two high advisories (`pnpm audit --prod` clean)                  |
+| Queue                      | `RedisQueue` adapter with contract tests; pg-boss vs Redis measured (relative, one box)                                                                                                             |
+| Authorisation              | `route-coverage.test.ts` fails CI if an `/api/admin` or `/api/v1` route is not wrapped; `security.e2e.ts` calls every admin route anonymously on all five methods (never 2xx/5xx)                   |
+| CSP (ADR-0005)             | Nonce for the console, allowlist for the cacheable storefront; zero violations loading storefront + console in Chromium, **on the production build**                                                |
+| Load shedding              | `shed.*` flags / `SOLD_SHED_BELOW`: 503 + Retry-After, checkout and probes never shed; live e2e                                                                                                     |
+| Production build           | Standalone `server.js`, `NODE_ENV=production`, extension DB isolation **enforced**: 50/51 e2e (the one is the documented CSP opt-in for the TikTok pixel, which now fails with an explicit message) |
+| Load (local, one instance) | Saturates at ~250 req/s; 50x spike with zero errors; 300 buyers for 50 units: exactly 50 sold, 0 oversold, 0 5xx. Details and caveats: `docs/capacity-report.md`                                    |
+| Chaos (local)              | Redis killed mid-load: 0 errors. Postgres killed mid-load: cached pages served, APIs 503, auto recovery. Worker SIGKILLed mid-run: nothing lost, no duplicate email. `docs/chaos-drills.md`         |
+| Backup/restore             | `ops/drills/backup-restore.sh`: 10 tables, order checksum, migration journal and 27 FKs identical after restore                                                                                     |
+| N-1 on N                   | The previous release (`f6712a2`, before migrations 0013-0015) built from a worktree and run on the current schema: its own 34 e2e tests pass (`ops/drills/n-minus-1.sh`)                            |
+
+**Bugs that only running the real thing found (all fixed, all with a regression guard):** the worker bundle crashed at boot (`import.meta.url` in
+CJS); every cookie-authenticated write was refused in the container (CSRF compared with `HOSTNAME`); dependency outages were 500s; CI's smoke job
+could never have passed (extension roles not provisioned); the CSP overwrote the stricter `/media` policy.
+
+**Still not done in Phase 8 (do not claim):** independent re-review of earlier phases (reviewers were rate limited); a load test on any cloud tier,
+soak, multi-instance run, cache-cold scenario; managed PITR/failover and blackholed-database drills; Docker images, Terraform apply and GitHub workflows
+have never been executed (`terraform validate` only); `degrade.*` rungs 1-3 and 5 have no behaviour; no DB circuit breaker; no audit hash chain; no secret scanner in CI;
+a production-realistic upgrade (real data volume, codemods) has not been rehearsed because there is only one Base version.
 
 ## Pending in Phase 0 (not done, or not verifiable here)
 
