@@ -10,3 +10,4 @@ export * from './roles';
 export * from './sealed';
 export * from './oidc';
 export * from './sso';
+export * from './scim';

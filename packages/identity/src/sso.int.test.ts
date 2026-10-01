@@ -5,7 +5,7 @@ import { schema, sql, type Db } from '@sold/db';
 import { createTestDatabase, type TestDatabase } from '@sold/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startFakeIdp, type FakeIdp } from './fake-idp';
-import { OidcClient, SsoError, type OidcConfig } from './oidc';
+import { OidcClient, type OidcConfig, type SsoError } from './oidc';
 import { seal, open } from './sealed';
 import { SessionService } from './session';
 import { completeSsoLogin } from './sso';
