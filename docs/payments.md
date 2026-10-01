@@ -7,29 +7,30 @@ order becomes `paid` through `OrderService.transition`) and never the other way 
 
 ```ts
 interface PaymentGateway {
-  id; displayName;
+  id;
+  displayName;
   supportsCurrency(currency): boolean;
   createPayment(req): Promise<{ gatewayRef; status; clientSecret?; redirectUrl?; instructions? }>;
-  refund(req):        Promise<{ refundRef; status: 'succeeded' | 'pending' | 'failed' }>;
-  parseWebhook(rawBody, headers): GatewayEvent[];   // verifies authenticity, then normalises
+  refund(req): Promise<{ refundRef; status: 'succeeded' | 'pending' | 'failed' }>;
+  parseWebhook(rawBody, headers): GatewayEvent[]; // verifies authenticity, then normalises
 }
 ```
 
 Nothing outside an adapter imports a vendor SDK or knows a vendor's event names. Adapters translate into six normalised events
 (`payment.requires_action | authorized | captured | failed | voided`, `refund.succeeded | failed`).
 
-| Adapter | Status |
-| --- | --- |
-| `ManualGateway` (bank transfer, cash on delivery) | Complete. An admin confirms receipt (`confirmManually`). Zero-config default. |
-| `MockGateway` (`@sold/payments/testing`) | Deterministic, idempotent, signed webhooks. Tests and local dev. |
-| `StripeGateway` | Built from Stripe's documented API over plain `fetch`. **Tested only against a local fake API and synthetic fixtures signed with the documented scheme, never against Stripe itself** (no credentials here). Before going live, run it against a Stripe test-mode account and confirm the event names listed at the top of `gateways/stripe.ts`. |
+| Adapter                                           | Status                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ManualGateway` (bank transfer, cash on delivery) | Complete. An admin confirms receipt (`confirmManually`). Zero-config default.                                                                                                                                                                                                                                                                    |
+| `MockGateway` (`@sold/payments/testing`)          | Deterministic, idempotent, signed webhooks. Tests and local dev.                                                                                                                                                                                                                                                                                 |
+| `StripeGateway`                                   | Built from Stripe's documented API over plain `fetch`. **Tested only against a local fake API and synthetic fixtures signed with the documented scheme, never against Stripe itself** (no credentials here). Before going live, run it against a Stripe test-mode account and confirm the event names listed at the top of `gateways/stripe.ts`. |
 
 ## Rules that keep money correct
 
 1. **Gateway calls happen outside database transactions** and always carry an idempotency key derived from our own ids (the payment id,
    the refund id). A retry after a timeout cannot double-charge or double-refund. A slow gateway never holds a connection or a lock.
 2. **Webhooks are stored once** per `(gateway, event_id)` in `payment_events` (the dedupe key and the audit log), applied under the
-   payment row lock, and safe to receive twice, out of order, or before we have recorded the gateway reference (they are *deferred*
+   payment row lock, and safe to receive twice, out of order, or before we have recorded the gateway reference (they are _deferred_
    and re-applied by `reprocessPending`). Verified: 20 concurrent identical deliveries apply exactly once.
 3. **The gateway is the source of truth for status, but never for amounts.** A captured amount that differs from the payment is not
    marked paid: it raises `payment.amount_mismatch` and the event is flagged `needs_attention`.

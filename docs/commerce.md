@@ -58,9 +58,9 @@ unit. `CHECK (reserved <= on_hand)` is a second line of defence: a bug in applic
 Holds are idempotent per `(owner, variant)`, expire (`sweepExpired`, bounded batches, `SKIP LOCKED`), and are committed into a
 permanent decrement inside the order-payment transaction.
 
-| Strategy | Use | Behaviour |
-| --- | --- | --- |
-| `PostgresReservationStrategy` (default) | everything | authoritative, always correct |
+| Strategy                                     | Use                   | Behaviour                                                                                   |
+| -------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------- |
+| `PostgresReservationStrategy` (default)      | everything            | authoritative, always correct                                                               |
 | `GatedReservationStrategy` + `InventoryGate` | hot SKUs during drops | Redis counter rejects "sold out" in microseconds so the losers never reach the database row |
 
 The gate is an optimisation, never the source of truth. It can be stale-high (harmless: Postgres refuses) or stale-low (shoppers
@@ -70,7 +70,7 @@ to Postgres behind a circuit breaker. So it can reject wrongly for a short while
 Measured locally (single machine, PostgreSQL 16, pool of 20, in-flight cap 64; **not** a capacity claim, see `docs/scaling.md`):
 5,000 buyers for 100 units sells exactly 100 in ~2.2 s on the Postgres strategy; with the gate ~0.4 s and only 100 requests reach Postgres.
 
-Stock is only checked softly when adding to a cart and *held* at checkout, so abandoned carts cannot lock up a limited drop.
+Stock is only checked softly when adding to a cart and _held_ at checkout, so abandoned carts cannot lock up a limited drop.
 
 Unpaid orders hold stock for `paymentWindowMinutes` (default 30); `OrderService.cancelUnpaid` and `InventoryService.sweepExpired`
 are the sweeps the worker runs. If payment lands after the hold lapsed, the order re-secures stock; if it cannot, the order
