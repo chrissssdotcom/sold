@@ -1,0 +1,86 @@
+# Alert rules built only from metrics the app exports today (see apps/web/src/server/metrics.ts, commerce-metrics.ts,
+# apps/web/worker/main.ts). Thresholds are starting points from the design SLOs in docs/scaling.md, NOT tuned from
+# production traffic (there is none yet). Each alert links to the runbook section that says what to do.
+groups:
+  - name: sold-availability
+    rules:
+      - alert: SoldHigh5xxRatio
+        expr: |
+          sum(rate(sold_http_requests_total{status_class="5xx",route_class!="internal"}[5m]))
+            / clamp_min(sum(rate(sold_http_requests_total{route_class!="internal"}[5m])), 1) > 0.02
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: '5xx ratio above 2% for 5 minutes'
+          runbook: docs/runbooks/operations.md#elevated-5xx
+      - alert: SoldCheckoutFailing
+        expr: |
+          sum(rate(sold_http_requests_total{route_class="checkout",status_class="5xx"}[5m]))
+            / clamp_min(sum(rate(sold_http_requests_total{route_class="checkout"}[5m])), 0.05) > 0.01
+        for: 3m
+        labels: { severity: page }
+        annotations:
+          summary: 'Checkout 5xx above 1% (revenue path)'
+          runbook: docs/runbooks/operations.md#checkout-errors
+      - alert: SoldCheckoutSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(sold_http_request_duration_seconds_bucket{route_class="checkout"}[5m]))) > 2
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Checkout p95 above 2 s'
+          runbook: docs/runbooks/operations.md#checkout-errors
+      - alert: SoldTargetDown
+        expr: up{job=~"sold-.*"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: '{{ $labels.job }} is not being scraped'
+          runbook: docs/runbooks/operations.md#a-service-is-down
+  - name: sold-capacity
+    rules:
+      - alert: SoldDbPoolSaturated
+        expr: max by (pool) (sold_db_pool_connections{state="waiting"}) > 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: 'Requests are waiting for a database connection ({{ $labels.pool }})'
+          runbook: docs/runbooks/operations.md#database-pool-saturated
+      - alert: SoldInventoryGateFailingOpen
+        expr: sum(rate(sold_inventory_gate_events_total{event="redis_error"}[5m])) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Inventory admission gate cannot reach Redis and is failing open (Postgres still prevents overselling)'
+          runbook: docs/runbooks/operations.md#redis-down
+  - name: sold-jobs
+    rules:
+      - alert: SoldQueueOldestJobTooOld
+        expr: max by (queue, class) (sold_queue_oldest_job_age_seconds{class="critical"}) > 60
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: 'Critical queue {{ $labels.queue }} has a job waiting over 60 s (outbox/payments stall)'
+          runbook: docs/runbooks/operations.md#queue-backlog
+      - alert: SoldQueueBacklogDefault
+        expr: max by (queue, class) (sold_queue_oldest_job_age_seconds{class=~"default|bulk"}) > 900
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Queue {{ $labels.queue }} oldest job over 15 min'
+          runbook: docs/runbooks/operations.md#queue-backlog
+  - name: sold-extensions
+    rules:
+      - alert: SoldExtensionUnhandledFailures
+        expr: increase(sold_extension_unhandled_failures_total[15m]) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: 'An extension let an error escape its handler'
+          runbook: docs/runbooks/operations.md#a-misbehaving-extension
+      - alert: SoldExtensionBlockingEventLoop
+        expr: sum by (extension) (rate(sold_extension_blocked_ms_sum[5m])) > 50
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Extension {{ $labels.extension }} is blocking the event loop'
+          runbook: docs/runbooks/operations.md#a-misbehaving-extension

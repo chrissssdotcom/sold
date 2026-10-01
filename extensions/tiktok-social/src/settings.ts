@@ -8,7 +8,7 @@ export const settings = z.object({
     .meta({
       title: 'Pixel code',
       description:
-        'Events Manager > Web events. Public identifier. Leave blank to disable tracking.',
+        "Events Manager > Web events. Public identifier. Leave blank to disable tracking. The site's Content-Security-Policy must also allow https://analytics.tiktok.com (see docs/social-growth.md).",
     }),
   serverEvents: z.boolean().default(false).meta({
     title: 'Send conversions from the server (Events API)',

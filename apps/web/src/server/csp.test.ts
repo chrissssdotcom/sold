@@ -23,6 +23,12 @@ describe('csp', () => {
     expect(csp).not.toContain('unsafe-eval');
   });
 
+  it('frame hosts extend frame-src only', () => {
+    const csp = buildCsp({ frameHosts: ['https://www.tiktok.com'] });
+    expect(csp).toContain("frame-src 'self' https://www.tiktok.com");
+    expect(csp).toContain("default-src 'self'");
+  });
+
   it('eval and websockets only in dev', () => {
     expect(buildCsp({ dev: true })).toContain("'unsafe-eval'");
     expect(buildCsp({})).not.toContain('unsafe-eval');

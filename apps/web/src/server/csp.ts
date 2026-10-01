@@ -13,6 +13,8 @@ export interface CspOptions {
   /** Extra script/connect hosts, from `SOLD_CSP_SCRIPT_HOSTS` / `SOLD_CSP_CONNECT_HOSTS` (space separated origins). */
   scriptHosts?: string[];
   connectHosts?: string[];
+  /** Hosts allowed to be framed by the page (embeds), from `SOLD_CSP_FRAME_HOSTS`. */
+  frameHosts?: string[];
   /** Next's dev server needs eval for React refresh. Never true in production. */
   dev?: boolean;
 }
@@ -40,7 +42,7 @@ export function buildCsp(opts: CspOptions = {}): string {
     'img-src': ["'self'", 'data:', 'blob:', 'https:'],
     'font-src': ["'self'", 'data:'],
     'connect-src': connect,
-    'frame-src': ["'self'"],
+    'frame-src': ["'self'", ...(opts.frameHosts ?? [])],
     'frame-ancestors': ["'self'"],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],

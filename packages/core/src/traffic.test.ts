@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { routeClassOf, shouldShed } from './traffic';
+import {
+  routeClassOf,
+  shedBelowFrom,
+  shedBelowFromEnv,
+  shouldShed,
+  strictestShed,
+} from './traffic';
 
 describe('routeClassOf', () => {
   it.each([
@@ -26,5 +32,35 @@ describe('shouldShed', () => {
     expect(shouldShed('checkout', 'browse')).toBe(false);
     expect(shouldShed('internal', 'checkout')).toBe(false);
     expect(shouldShed('checkout', null)).toBe(false);
+  });
+});
+
+describe('shedding decisions', () => {
+  it('no flags -> nothing shed; the highest-priority class turned on wins', () => {
+    expect(shedBelowFrom(new Set())).toBeNull();
+    expect(shedBelowFrom(new Set(['shed.reporting']))).toBe('reporting');
+    expect(shedBelowFrom(new Set(['shed.reporting', 'shed.account']))).toBe('account');
+    expect(shedBelowFrom(new Set(['shed.cart', 'shed.admin']))).toBe('cart');
+  });
+  it('checkout can never be shed, by flag or environment', () => {
+    expect(shedBelowFrom(new Set(['shed.checkout']))).toBeNull();
+    expect(shedBelowFromEnv('checkout')).toBeNull();
+    expect(shedBelowFromEnv('internal')).toBeNull();
+    expect(shedBelowFromEnv('browse')).toBe('browse');
+    expect(shedBelowFromEnv('junk')).toBeNull();
+    for (const below of ['reporting', 'admin', 'account', 'browse', 'cart'] as const) {
+      expect(shouldShed('checkout', below)).toBe(false);
+      expect(shouldShed('internal', below)).toBe(false);
+    }
+  });
+  it('shedding at browse sheds browse and everything below, not cart', () => {
+    expect(shouldShed('browse', 'browse')).toBe(true);
+    expect(shouldShed('account', 'browse')).toBe(true);
+    expect(shouldShed('cart', 'browse')).toBe(false);
+  });
+  it('strictest picks the one that protects more', () => {
+    expect(strictestShed(null, 'admin')).toBe('admin');
+    expect(strictestShed('browse', 'admin')).toBe('browse');
+    expect(strictestShed(null, null)).toBeNull();
   });
 });

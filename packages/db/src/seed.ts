@@ -24,12 +24,27 @@ export const degradationLadderFlags = [
   { key: 'degrade.waiting-room', description: 'Rung 5: enable the virtual waiting room' },
 ] as const;
 
+/** Load shedding (Section 8A.6): turning `shed.<class>` on makes that class, and every lower-priority one, answer 503 + Retry-After. Checkout has no flag on purpose. */
+export const sheddingFlags = [
+  { key: 'shed.reporting', description: 'Shed reporting/SCIM API traffic (503 + Retry-After)' },
+  {
+    key: 'shed.admin',
+    description: 'Shed staff console API (and everything below). Flags and sign-in stay reachable',
+  },
+  { key: 'shed.account', description: 'Shed account/auth API (and everything below)' },
+  { key: 'shed.browse', description: 'Shed catalog/browse API (and everything below)' },
+  {
+    key: 'shed.cart',
+    description: 'Shed cart API (and everything below). Last resort before checkout',
+  },
+] as const;
+
 /** Idempotent: safe to run repeatedly and never overwrites operator changes to `enabled`. */
 export async function seedBase(db: PrimaryDb): Promise<{ flags: number }> {
   await db
     .insert(featureFlags)
     .values(
-      degradationLadderFlags.map((f) => ({
+      [...degradationLadderFlags, ...sheddingFlags].map((f) => ({
         key: f.key,
         description: f.description,
         enabled: false,
@@ -39,5 +54,5 @@ export async function seedBase(db: PrimaryDb): Promise<{ flags: number }> {
       target: featureFlags.key,
       set: { description: sql`excluded.description` },
     });
-  return { flags: degradationLadderFlags.length };
+  return { flags: degradationLadderFlags.length + sheddingFlags.length };
 }

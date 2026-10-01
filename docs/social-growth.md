@@ -25,6 +25,9 @@ confirm the wording and categories with your counsel for each market you sell in
   (`payment-<id>`), **only for orders whose recorded consent includes advertising**. The email is SHA-256 hashed after normalisation and never sent in clear. Retries on 5xx/429/network;
   a 4xx rejection is logged and dropped (retrying cannot succeed); a sent-ledger table makes our side idempotent.
 - **Blocks**: `tiktok-social/follow-banner` (a plain link) and `tiktok-social/video-embed` (placeholder until advertising consent, then TikTok's embed iframe).
+- **Content-Security-Policy.** The storefront CSP (ADR-0005) blocks third-party scripts by default, so the pixel will silently not load until the operator allows it:
+  `SOLD_CSP_SCRIPT_HOSTS=https://analytics.tiktok.com`, `SOLD_CSP_CONNECT_HOSTS=https://analytics.tiktok.com`, and for the video embed `SOLD_CSP_FRAME_HOSTS=https://www.tiktok.com`. (TikTok's pixel may contact more
+  hosts than these; watch the browser console with `SOLD_CSP=report-only` first and add what it reports.)
 - Settings (Admin > Extensions > tiktok-social): pixel code, server events switch, access token (encrypted, write-only), test event code, store URL. Changes reach running workers within ~15-20 s.
 
 Verified: payload shape and hashing against a known SHA-256 vector, the consent gate (all negative cases), idempotency and error classification in 7 unit tests against a local fake; the

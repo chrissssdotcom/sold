@@ -45,3 +45,30 @@ export function shouldShed(cls: RouteClass, shedBelow: RouteClass | null): boole
   if (shedBelow === null || cls === 'internal') return false;
   return routePriority[cls] >= routePriority[shedBelow];
 }
+
+/** Classes an operator can shed, lowest priority first. Checkout is deliberately absent: it is never shed (Section 8A.6). */
+export const sheddableClasses = ['reporting', 'admin', 'account', 'browse', 'cart'] as const;
+export type SheddableClass = (typeof sheddableClasses)[number];
+
+export const shedFlagKey = (cls: SheddableClass): string => `shed.${cls}`;
+
+/** `shed.<class>` flags that are on -> the highest-priority class being shed (it and everything below go). */
+export function shedBelowFrom(on: ReadonlySet<string>): RouteClass | null {
+  let best: SheddableClass | null = null;
+  for (const cls of sheddableClasses)
+    if (on.has(shedFlagKey(cls)) && (best === null || routePriority[cls] < routePriority[best]))
+      best = cls;
+  return best;
+}
+
+/** Hard override that needs no database: `SOLD_SHED_BELOW=browse`. Anything unrecognised (or `checkout`) is ignored. */
+export function shedBelowFromEnv(raw: string | undefined): RouteClass | null {
+  return (sheddableClasses as readonly string[]).includes(raw ?? '') ? (raw as RouteClass) : null;
+}
+
+/** The more protective (higher-priority-class shed) of two decisions. */
+export function strictestShed(a: RouteClass | null, b: RouteClass | null): RouteClass | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return routePriority[a] <= routePriority[b] ? a : b;
+}

@@ -35,7 +35,8 @@ export function proxy(request: NextRequest) {
   // CSP: strict nonce posture for the (dynamic) console, allowlist posture for the cacheable storefront. Read at request time.
   const mode = cspMode(process.env['SOLD_CSP']);
   let csp: string | null = null;
-  if (mode !== 'off') {
+  // /media/* sets its own, stricter policy (default-src 'none'); do not overwrite it.
+  if (mode !== 'off' && !request.nextUrl.pathname.startsWith('/media/')) {
     const isConsole =
       request.nextUrl.pathname === '/admin' || request.nextUrl.pathname.startsWith('/admin/');
     const nonce = isConsole ? btoa(crypto.randomUUID()) : undefined;
@@ -43,6 +44,7 @@ export function proxy(request: NextRequest) {
       ...(nonce ? { nonce } : {}),
       scriptHosts: parseHosts(process.env['SOLD_CSP_SCRIPT_HOSTS']),
       connectHosts: parseHosts(process.env['SOLD_CSP_CONNECT_HOSTS']),
+      frameHosts: parseHosts(process.env['SOLD_CSP_FRAME_HOSTS']),
       dev: process.env.NODE_ENV !== 'production',
     });
     // Next reads the nonce from the *request's* CSP header and stamps it onto its own scripts.

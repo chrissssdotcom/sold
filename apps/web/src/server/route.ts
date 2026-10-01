@@ -1,7 +1,8 @@
 import { resolveRequestId } from '@sold/core/observability';
-import { routeClassOf } from '@sold/core/traffic';
+import { routeClassOf, shouldShed } from '@sold/core/traffic';
 import type { Logger } from '@sold/core/observability';
 import { getRuntime } from './runtime';
+import { currentShedBelow, isShedExempt } from './shedding';
 
 export interface RouteContext {
   requestId: string;
@@ -25,7 +26,22 @@ export function route(handler: Handler): (request: Request) => Promise<Response>
     const started = performance.now();
     let response: Response;
     try {
-      response = await handler(request, { requestId, log });
+      // Probes and metrics never consult flags (they must answer even when the database does not).
+      const shedBelow = routeClass === 'internal' ? null : await currentShedBelow();
+      if (shouldShed(routeClass, shedBelow) && !isShedExempt(url.pathname)) {
+        // Deliberate load shedding (Section 8A.6): cheap, explicit, and retryable. Never reached for checkout or probes.
+        log.warn({ shedBelow }, 'request shed');
+        response = Response.json(
+          {
+            error: {
+              code: 'overloaded',
+              message: 'Busy right now, please retry shortly',
+              requestId,
+            },
+          },
+          { status: 503, headers: { 'retry-after': '30', 'cache-control': 'no-store' } },
+        );
+      } else response = await handler(request, { requestId, log });
     } catch (error) {
       log.error({ err: error }, 'unhandled error in route handler');
       response = Response.json({ error: { code: 'internal_error', requestId } }, { status: 500 });
