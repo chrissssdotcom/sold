@@ -111,3 +111,13 @@ export const auditLog = pgTable('audit_log', {
     .default(sql`'{}'::jsonb`),
   ip: text('ip'),
 });
+
+export const ssoReplay = pgTable(
+  'sso_replay',
+  {
+    provider: text('provider').notNull(),
+    assertionId: text('assertion_id').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.assertionId] })],
+);

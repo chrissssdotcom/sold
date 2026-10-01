@@ -13,6 +13,7 @@
     "test:integration": "vitest run --project integration"
   },
   "dependencies": {
+    "@node-saml/node-saml": "^5.1.0",
     "@sold/commerce": "workspace:*",
     "@sold/core": "workspace:*",
     "@sold/db": "workspace:*",
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@sold/config": "workspace:*",
     "@sold/testing": "workspace:*",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "xml-crypto": "6.3.2"
   }
 }

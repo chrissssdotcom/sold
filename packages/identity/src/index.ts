@@ -11,3 +11,4 @@ export * from './sealed';
 export * from './oidc';
 export * from './sso';
 export * from './scim';
+export * from './saml';
