@@ -5,6 +5,7 @@ import type { JobQueue } from '@sold/core/jobs';
 import type { PrimaryDb } from '@sold/db';
 import { SamlClient, SessionService } from '@sold/identity';
 import { notifyOnEvent } from '@sold/notify';
+import { buildWebhooks } from '../src/server/platform';
 import instanceConfig from '../../../sold.config';
 import { buildNotifications, buildTransport, orderLink, productLink } from '../src/server/notify';
 import { buildPayments } from '../src/server/payments';
@@ -44,6 +45,7 @@ export async function startCommerceJobs(opts: {
   const transport = buildTransport(opts.env);
   const orderUrl = orderLink(opts.env);
   const productUrl = productLink(opts.env);
+  const webhooks = buildWebhooks(opts.env);
   if (!transport)
     log.warn(
       {},
@@ -74,6 +76,13 @@ export async function startCommerceJobs(opts: {
   await queue.schedule('identity.sweep', '17 * * * *');
 
   const publish = async (e: RelayEvent): Promise<void> => {
+    // Outbound webhooks: one idempotent delivery row per subscribed endpoint.
+    await webhooks.enqueue(db, {
+      eventId: e.eventId,
+      eventType: e.eventType,
+      payload: e.payload,
+      createdAt: new Date(),
+    });
     // Internal consumers first (idempotent by event id), then extensions. A failure here retries the whole event.
     await notifyOnEvent(
       {
@@ -90,6 +99,22 @@ export async function startCommerceJobs(opts: {
     if (!KNOWN_EVENTS.has(e.eventType)) return;
     await opts.publish(e.eventType as EventName, e.payload as never, { eventId: e.eventId });
   };
+
+  // Webhook delivery loop (same shape as email delivery): sends due deliveries, backs off when idle.
+  void (async () => {
+    let idle = 0;
+    while (!signal.aborted) {
+      try {
+        const r = await webhooks.deliverDue(db, { batch: 20 });
+        idle = r.delivered + r.retried + r.failed === 0 ? Math.min(idle + 1, 10) : 0;
+        if (r.failed > 0) log.warn(r, 'webhook deliveries failed permanently');
+      } catch (error) {
+        idle = 10;
+        log.error({ err: error }, 'webhook delivery pass failed');
+      }
+      if (idle > 0) await new Promise((res) => setTimeout(res, 300 * idle + Math.random() * 300));
+    }
+  })();
 
   // Email delivery: a tight loop like the outbox relay (an order confirmation should arrive in seconds), backing off when idle.
   if (transport) {

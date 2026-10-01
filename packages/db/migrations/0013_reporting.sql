@@ -13,16 +13,6 @@
 CREATE SCHEMA IF NOT EXISTS reporting;
 --> statement-breakpoint
 
--- sold:allow dynamic-sql: creates the reporting role only if it does not exist yet; constant text, no interpolation
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sold_grafana') THEN
-    CREATE ROLE sold_grafana NOLOGIN;
-  END IF;
-END
-$$;
---> statement-breakpoint
-
 CREATE FUNCTION reporting.currency_exponent(currency text) RETURNS integer
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT CASE upper(trim(currency))
@@ -144,21 +134,33 @@ FROM notifications
 GROUP BY status;
 --> statement-breakpoint
 
--- Permissions: schema usage and SELECT on what is in it. Nothing else, ever.
-REVOKE ALL ON SCHEMA reporting FROM PUBLIC;
---> statement-breakpoint
-GRANT USAGE ON SCHEMA reporting TO sold_grafana;
---> statement-breakpoint
-GRANT SELECT ON ALL TABLES IN SCHEMA reporting TO sold_grafana;
---> statement-breakpoint
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reporting TO sold_grafana;
---> statement-breakpoint
-ALTER DEFAULT PRIVILEGES IN SCHEMA reporting GRANT SELECT ON TABLES TO sold_grafana;
+-- Permissions live in one idempotent function so they can be (re)applied by an operator who is allowed to manage roles.
+-- The migration user may not be (a least-privilege migrator, or a managed service); in that case the migration still succeeds,
+-- says so, and `sold reporting:enable-login` applies the grants.
+CREATE FUNCTION reporting.apply_grants() RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sold_grafana') THEN
+    CREATE ROLE sold_grafana NOLOGIN;
+  END IF;
+  REVOKE ALL ON SCHEMA reporting FROM PUBLIC;
+  GRANT USAGE ON SCHEMA reporting TO sold_grafana;
+  GRANT SELECT ON ALL TABLES IN SCHEMA reporting TO sold_grafana;
+  GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reporting TO sold_grafana;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA reporting GRANT SELECT ON TABLES TO sold_grafana;
+  -- Dashboards may legitimately run longer than request-path queries, but never unbounded, and never write.
+  ALTER ROLE sold_grafana SET statement_timeout = '30s';
+  ALTER ROLE sold_grafana SET default_transaction_read_only = on;
+  ALTER ROLE sold_grafana SET idle_in_transaction_session_timeout = '10s';
+END
+$$;
 --> statement-breakpoint
 
--- Dashboards may legitimately run longer than request-path queries, but never unbounded, and never write.
-ALTER ROLE sold_grafana SET statement_timeout = '30s';
---> statement-breakpoint
-ALTER ROLE sold_grafana SET default_transaction_read_only = on;
---> statement-breakpoint
-ALTER ROLE sold_grafana SET idle_in_transaction_session_timeout = '10s';
+-- sold:allow dynamic-sql: calls the fixed function above; no interpolation
+DO $$
+BEGIN
+  PERFORM reporting.apply_grants();
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'reporting: this database user cannot manage roles; run `sold reporting:enable-login` as one that can';
+END
+$$;

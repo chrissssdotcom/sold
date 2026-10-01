@@ -27,8 +27,14 @@ export function assertSameOrigin(request: Request, opts: { requireJson?: boolean
   const fetchSite = request.headers.get('sec-fetch-site');
   if (originHost !== host && !(originHost === null && fetchSite === 'same-origin'))
     throw new CsrfError();
-  if (opts.requireJson !== false && request.headers.get('content-length') !== '0') {
-    const type = request.headers.get('content-type') ?? '';
-    if (!/^application\/json\b/i.test(type) && request.body !== null) throw new CsrfError();
+  // A request that carries a body must carry JSON (a plain HTML form cannot). A bodyless request (DELETE, an action POST) has
+  // nothing to disguise; the Origin check above is what stops cross-site ones.
+  const hasBody =
+    Number(request.headers.get('content-length') ?? '0') > 0 ||
+    request.headers.has('transfer-encoding');
+  // (HTTP/2 may omit Content-Length, so any declared content type also counts as "has a body".)
+  const type = request.headers.get('content-type');
+  if (opts.requireJson !== false && (hasBody || type !== null)) {
+    if (!/^application\/json\b/i.test(type ?? '')) throw new CsrfError();
   }
 }

@@ -25,6 +25,8 @@ export async function reportingEnableLogin(ctx: CliContext): Promise<void> {
   }
   const db = createDb({ primaryUrl: url, poolMax: 1, applicationName: 'sold-cli' });
   try {
+    // Idempotent: creates the role and grants if the migration could not (a migrator that may not manage roles).
+    await db.primary.execute(sql`SELECT reporting.apply_grants()`);
     // `format(%L)` quotes the literal server-side, so the password is never spliced into SQL text by us.
     const stmt = await db.primary.execute<{ ddl: string }>(
       sql`SELECT format('ALTER ROLE sold_grafana LOGIN PASSWORD %L', ${password}::text) AS ddl`,
