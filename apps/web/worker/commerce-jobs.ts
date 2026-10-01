@@ -3,6 +3,7 @@ import type { Env } from '@sold/core/env';
 import type { EventName } from '@sold/extension-sdk';
 import type { JobQueue } from '@sold/core/jobs';
 import type { PrimaryDb } from '@sold/db';
+import { SamlClient, SessionService } from '@sold/identity';
 import { buildPayments } from '../src/server/payments';
 
 interface Log {
@@ -49,6 +50,16 @@ export async function startCommerceJobs(opts: {
     log.info({ holds, cancelled, webhooks: webhooks.applied, orphans }, 'commerce sweep');
   });
   await queue.schedule('commerce.sweep', '* * * * *');
+
+  // Identity housekeeping: expired sessions and the SAML replay ledger. Both are ignored by readers once expired, so this
+  // only bounds table growth; hourly is plenty.
+  await queue.ensureQueue({ name: 'identity.sweep', class: 'default' });
+  await queue.work('identity.sweep', async () => {
+    const sessions = await new SessionService().sweepExpired(db);
+    const replays = await SamlClient.sweep(db);
+    log.info({ sessions, replays }, 'identity sweep');
+  });
+  await queue.schedule('identity.sweep', '17 * * * *');
 
   const publish = async (e: RelayEvent): Promise<void> => {
     // Events no extension can subscribe to are still "published" (nothing to deliver).
