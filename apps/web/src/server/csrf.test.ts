@@ -17,6 +17,49 @@ const refused = (r: Request) => {
   }
 };
 
+describe('assertSameOrigin behind a container (request.url host is not the public host)', () => {
+  const inContainer = (headers: Record<string, string>) =>
+    new Request('http://0.0.0.0:3000/api/admin/x', { method: 'POST', headers });
+  it('accepts an Origin that matches the Host header the browser used', () => {
+    expect(
+      refused(
+        inContainer({
+          host: 'shop.example',
+          origin: 'https://shop.example',
+          'content-type': 'application/json',
+        }),
+      ),
+    ).toBe(false);
+  });
+  it('still refuses a foreign Origin', () => {
+    expect(
+      refused(
+        inContainer({
+          host: 'shop.example',
+          origin: 'https://evil.example',
+          'content-type': 'application/json',
+        }),
+      ),
+    ).toBe(true);
+  });
+  it('accepts the configured public URL when a proxy rewrites Host', () => {
+    process.env['SOLD_PUBLIC_URL'] = 'https://shop.example';
+    try {
+      expect(
+        refused(
+          inContainer({
+            host: 'internal-svc:3000',
+            origin: 'https://shop.example',
+            'content-type': 'application/json',
+          }),
+        ),
+      ).toBe(false);
+    } finally {
+      delete process.env['SOLD_PUBLIC_URL'];
+    }
+  });
+});
+
 describe('assertSameOrigin', () => {
   it('lets safe methods through', () => {
     expect(refused(req('GET'))).toBe(false);
