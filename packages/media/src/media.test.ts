@@ -22,6 +22,16 @@ const rejected = async (p: Promise<unknown>) =>
   )) as MediaRejected | null;
 
 describe('processImage', () => {
+  it('accepts AVIF (libvips reports it as heif/av1) and refuses HEIC', async () => {
+    const out = await processImage(await solid(64, 64).avif().toBuffer());
+    expect(out.mime).toBe('image/avif');
+    const heic = await solid(64, 64)
+      .heif({ compression: 'hevc' })
+      .toBuffer()
+      .catch(() => null);
+    if (heic) expect((await rejected(processImage(heic)))?.code).toBe('unsupported_type'); // hevc encoder is optional in libvips builds
+  });
+
   it('re-encodes a JPEG, makes WebP renditions up to its own width, and never upscales', async () => {
     const out = await processImage(await solid(1200, 800).jpeg().toBuffer());
     expect(out.mime).toBe('image/jpeg');

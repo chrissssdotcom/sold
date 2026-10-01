@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { buildCsp, cspHeaderName, cspMode, parseHosts } from './server/csp';
 import { localeSlugs, negotiateMarket, reservedPrefixes } from '@sold/storefront/i18n';
 
 const SAFE_ID = /^[A-Za-z0-9._-]{8,128}$/;
@@ -31,7 +32,25 @@ export function proxy(request: NextRequest) {
   const requestId = inbound && SAFE_ID.test(inbound) ? inbound : crypto.randomUUID();
   const headers = new Headers(request.headers);
   headers.set('x-request-id', requestId);
+  // CSP: strict nonce posture for the (dynamic) console, allowlist posture for the cacheable storefront. Read at request time.
+  const mode = cspMode(process.env['SOLD_CSP']);
+  let csp: string | null = null;
+  if (mode !== 'off') {
+    const isConsole =
+      request.nextUrl.pathname === '/admin' || request.nextUrl.pathname.startsWith('/admin/');
+    const nonce = isConsole ? btoa(crypto.randomUUID()) : undefined;
+    csp = buildCsp({
+      ...(nonce ? { nonce } : {}),
+      scriptHosts: parseHosts(process.env['SOLD_CSP_SCRIPT_HOSTS']),
+      connectHosts: parseHosts(process.env['SOLD_CSP_CONNECT_HOSTS']),
+      dev: process.env.NODE_ENV !== 'production',
+    });
+    // Next reads the nonce from the *request's* CSP header and stamps it onto its own scripts.
+    headers.set(cspHeaderName(mode), csp);
+    if (nonce) headers.set('x-nonce', nonce);
+  }
   const response = NextResponse.next({ request: { headers } });
+  if (csp) response.headers.set(cspHeaderName(mode), csp);
   response.headers.set('x-request-id', requestId);
   // Read at REQUEST time so one build/image can be promoted dev -> stage -> prod (Section 8C.6). A header set in
   // next.config would be frozen at build time. Mirrors safetySwitchesFor(env).blockIndexing in @sold/core.

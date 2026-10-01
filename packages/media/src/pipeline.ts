@@ -52,7 +52,7 @@ export async function processImage(input: Buffer): Promise<Processed> {
       'too_large',
       `Images must be under ${LIMITS.maxBytes / 1024 / 1024} MB`,
     );
-  let meta: sharp.Metadata;
+  let meta: Awaited<ReturnType<ReturnType<typeof sharp>['metadata']>>;
   try {
     meta = await sharp(input, { limitInputPixels: LIMITS.maxPixels, failOn: 'error' }).metadata();
   } catch (error) {
@@ -64,7 +64,10 @@ export async function processImage(input: Buffer): Promise<Processed> {
       'That file is not a supported image (JPEG, PNG, WebP, GIF or AVIF)',
     );
   }
-  const format = meta.format ? FORMATS[meta.format] : undefined;
+  // libvips reports AVIF as `heif` with AV1 compression; HEIC (other heif) is refused.
+  const kind =
+    meta.format === 'heif' ? (meta.compression === 'av1' ? 'avif' : undefined) : meta.format;
+  const format = kind ? FORMATS[kind] : undefined;
   if (!format || !meta.width || !meta.height)
     throw new MediaRejected(
       'unsupported_type',
@@ -83,7 +86,7 @@ export async function processImage(input: Buffer): Promise<Processed> {
           ? base().png({ compressionLevel: 9 })
           : meta.format === 'gif'
             ? base().png()
-            : meta.format === 'avif'
+            : kind === 'avif'
               ? base().avif({ quality: 60 })
               : base().webp({ quality: 88 })
     ).toBuffer({ resolveWithObject: true });
