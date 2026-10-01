@@ -274,6 +274,27 @@ describe('extension boundary is an allowlist (review round 2)', () => {
     }
   });
 
+  it('allows fetch (only) in *.client.tsx browser files', async () => {
+    const fetchOnly = await ruleIds(
+      'extensions/demo/src/reviews.client.tsx',
+      `export const f = () => fetch('/x/demo/y');\n`,
+    );
+    expect(fetchOnly.filter((id) => /no-restricted-(globals|properties)/.test(id))).toEqual([]);
+    for (const code of [
+      `export const f = () => new WebSocket('wss://x');\n`,
+      `export const f = () => new XMLHttpRequest();\n`,
+    ])
+      expect(await ruleIds('extensions/demo/src/reviews.client.tsx', code), code).toEqual(
+        expect.arrayContaining([expect.stringMatching(/no-restricted-(globals|properties)/)]),
+      );
+    // And the strict tier is unchanged for every other file name.
+    expect(
+      await ruleIds('extensions/demo/src/widget.tsx', `export const f = () => fetch('/x');\n`),
+    ).toEqual(
+      expect.arrayContaining([expect.stringMatching(/no-restricted-(globals|properties)/)]),
+    );
+  });
+
   it('rejects require(), createRequire and computed dynamic imports that would defeat the allowlist', async () => {
     for (const [file, code] of [
       [

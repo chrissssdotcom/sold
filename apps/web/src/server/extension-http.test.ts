@@ -192,6 +192,44 @@ describe('handleExtensionRequest', () => {
   });
 });
 
+describe('handleExtensionRequest: customer routes', () => {
+  const route = {
+    kind: 'api' as const,
+    method: 'POST' as const,
+    path: '/mine',
+    customer: true,
+    handler: async (_r: Request, ctx: { actor: { id: string } | null }) =>
+      Response.json({ who: ctx.actor?.id }),
+  };
+  const post = { method: 'POST' };
+  it('lets a signed-in customer in and scopes the handler to their id', async () => {
+    const { call } = setup([route as never], {
+      resolveActor: async () => ({ id: 'c1', kind: 'customer' }),
+    });
+    const res = await call('/x/demo/mine', post);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ who: 'c1' });
+  });
+  it('refuses anonymous callers (401) and staff acting as customers (403)', async () => {
+    const anon = setup([route as never], { resolveActor: async () => null });
+    expect((await anon.call('/x/demo/mine', post)).status).toBe(401);
+    const staff = setup([route as never], {
+      resolveActor: async () => ({ id: 'a1', kind: 'admin' }),
+    });
+    expect((await staff.call('/x/demo/mine', post)).status).toBe(403);
+  });
+  it('never consults the permission authorizer for a customer route', async () => {
+    const authorize = vi.fn(async () => undefined);
+    const { call } = setup(
+      [route as never],
+      { resolveActor: async () => ({ id: 'c1', kind: 'customer' }) },
+      { authorize },
+    );
+    await call('/x/demo/mine', post);
+    expect(authorize).not.toHaveBeenCalled();
+  });
+});
+
 describe('handleExtensionRequest: request bodies are limited by bytes read, not by Content-Length', () => {
   const chunked = (chunks: number, size: number) => {
     const chunk = new Uint8Array(size).fill(65);

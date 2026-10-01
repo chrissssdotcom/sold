@@ -11,11 +11,13 @@ export const permissionSchema = z
   .string()
   .max(100)
   .refine((p) => permissionPattern.test(p) || extensionPermissionPattern.test(p), {
-    message: 'permission like "orders:read", "orders:*" or an extension key like "loyalty-points.accounts.read"',
+    message:
+      'permission like "orders:read", "orders:*" or an extension key like "loyalty-points.accounts.read"',
   });
 
 export function can(granted: readonly string[], needed: string): boolean {
-  if (extensionPermissionPattern.test(needed)) return granted.includes('*') || granted.includes(needed);
+  if (extensionPermissionPattern.test(needed))
+    return granted.includes('*') || granted.includes(needed);
   if (!permissionPattern.test(needed) || needed === '*' || needed.endsWith(':*')) return false; // a check is always for a specific permission
   if (granted.includes('*') || granted.includes(needed)) return true;
   const area = needed.slice(0, needed.indexOf(':'));

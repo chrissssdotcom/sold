@@ -51,6 +51,8 @@ export interface ProductDetailPageProps {
   stock: StockMap;
   related: CatalogProduct[];
   relatedStock: StockMap;
+  /** Pre-rendered extension contributions. A template places them where they fit, or ignores them. */
+  slots?: { aside?: ReactNode };
 }
 
 export interface OrderPageProps {
@@ -77,6 +79,8 @@ export interface AccountOrderSummary {
 }
 
 export interface AccountPageProps {
+  /** Pre-rendered extension contributions (`account.dashboard`). */
+  slots?: { dashboard?: ReactNode };
   market: Market;
   customer: { name: string; email: string };
   orders: AccountOrderSummary[];

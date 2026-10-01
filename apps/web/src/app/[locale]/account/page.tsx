@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { marketFor } from '@sold/storefront/i18n';
 import { getCommerce } from '../../../server/commerce';
+import { ExtensionSlot } from '../../../server/extension-ui';
 import { currentCustomer } from '../../../server/customer';
 import { getRuntime } from '../../../server/runtime';
 import { theme } from '../../../storefront/theme';
@@ -21,6 +22,9 @@ export default async function Account({ params }: { params: Promise<{ locale: st
   return (
     <AccountPage
       market={market}
+      slots={{
+        dashboard: <ExtensionSlot name="account.dashboard" props={{ customerId: customer.id }} />,
+      }}
       customer={{ name: customer.name, email: customer.email }}
       orders={list.map((o) => ({
         id: o.id,

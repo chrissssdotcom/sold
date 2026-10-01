@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { marketFor } from '@sold/storefront/i18n';
 import { viewOf } from '@sold/storefront/kit';
 import { getProduct, storefrontData } from '../../../../storefront/data';
+import { ExtensionSlot } from '../../../../server/extension-ui';
 import { theme } from '../../../../storefront/theme';
 
 export const revalidate = 60;
@@ -72,6 +73,9 @@ export default async function ProductPage({ params }: { params: Params }) {
         related={related}
         relatedStock={relatedStock}
         theme={theme}
+        slots={{
+          aside: <ExtensionSlot name="product.detail.aside" props={{ productId: product.id }} />,
+        }}
       />
     </>
   );

@@ -6,7 +6,7 @@ import type { AccountPageProps } from '../../contract';
 import { formatMoney } from '../../kit/money';
 
 /** The signed-in customer's home: their orders. Data arrives as props; the only action here is signing out. */
-export function AccountPage({ market, customer, orders }: AccountPageProps) {
+export function AccountPage({ market, customer, orders, slots }: AccountPageProps) {
   const router = useRouter();
   const base = `/${market.slug}`;
   return (
@@ -54,6 +54,7 @@ export function AccountPage({ market, customer, orders }: AccountPageProps) {
           </ul>
         )}
       </section>
+      {slots?.dashboard}
     </div>
   );
 }

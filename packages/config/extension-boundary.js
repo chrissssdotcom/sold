@@ -375,8 +375,12 @@ function tierRules({ io, packages, test = false }) {
 
 const ALL_FILES = '*.{ts,tsx,js,mjs,cjs}';
 const IO_SUFFIXES = ['observer', 'job', 'route'];
+/** Browser code: `*.client.tsx`. Same strict imports as everything else; only `fetch` (same-origin calls to the extension's own routes) is allowed. */
+const CLIENT_SUFFIXES = ['client'];
 const TEST_SUFFIXES = ['test', 'spec'];
-const suffixGlob = (suffixes) => `*.{${suffixes.join(',')}}.{ts,tsx,js,mjs,cjs}`;
+// A one-element brace set is not expanded by minimatch, so a single suffix must be written plain.
+const suffixGlob = (suffixes) =>
+  `*.${suffixes.length === 1 ? suffixes[0] : `{${suffixes.join(',')}}`}.{ts,tsx,js,mjs,cjs}`;
 
 /**
  * The extension boundary for a repository root: one strict block for all extension code, one block for the I/O
@@ -434,6 +438,26 @@ export function extensionBoundaryConfigs({ root, extensionsDir = 'extensions' } 
       },
     );
   }
+  // Last, so it overrides the per-extension strict blocks above for the same files.
+  configs.push({
+    name: 'sold/extensions/client',
+    files: [`${extensionsDir}/**/${suffixGlob(CLIENT_SUFFIXES)}`],
+    plugins: { 'sold-extension': extensionPlugin },
+    rules: {
+      ...tierRules({ io: false, packages: [] }),
+      'no-restricted-globals': [
+        'error',
+        ...NETWORK_GLOBALS.filter((name) => name !== 'fetch').map((name) => ({
+          name,
+          message: `${name} is not allowed in extension code (only fetch, in *.client.tsx).`,
+        })),
+      ],
+      'no-restricted-properties': [
+        'error',
+        ...globalPropertyBans.filter((b) => b.property !== 'fetch'),
+      ],
+    },
+  });
   return configs;
 }
 

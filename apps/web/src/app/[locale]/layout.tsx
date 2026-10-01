@@ -5,6 +5,7 @@ import { darkTokensCss } from '@sold/storefront';
 import { markets, marketFor } from '@sold/storefront/i18n';
 import { CartProvider } from '@sold/storefront/kit';
 import instanceConfig from '../../../../../sold.config';
+import { ExtensionSlot } from '../../server/extension-ui';
 import { getThemeTokens } from '../../storefront/data';
 import { theme } from '../../storefront/theme';
 
@@ -70,6 +71,7 @@ export default async function StoreLayout({
           <main id="main">{children}</main>
           <Footer market={market} site={site} />
           <CartDrawer market={market} />
+          <ExtensionSlot name="storefront.footer" props={{}} />
         </CartProvider>
       </body>
     </html>

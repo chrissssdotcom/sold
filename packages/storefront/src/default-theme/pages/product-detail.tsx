@@ -10,6 +10,7 @@ export function ProductDetailPage({
   stock,
   related,
   relatedStock,
+  slots,
   theme,
 }: ProductDetailPageProps) {
   const ProductCard = theme.components.ProductCard;
@@ -82,6 +83,7 @@ export function ProductDetailPage({
           </div>
         </div>
       </div>
+      {slots?.aside ? <div className="container">{slots.aside}</div> : null}
       {related.length > 0 ? (
         <section style={{ paddingBottom: 'clamp(3rem,7vw,6rem)' }} aria-labelledby="related">
           <div className="section__head">

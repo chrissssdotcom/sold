@@ -93,6 +93,18 @@ const ALLOWED_TYPES = new Set([
 const NO_BODY_STATUS = new Set([101, 204, 205, 304]);
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
+/**
+ * Brand check instead of `instanceof`: a bundler can load @sold/core twice (one copy per route graph), and an error thrown
+ * by one copy's authorizer would then fall through to the 500 path instead of the 401/403 it is.
+ */
+function isForbidden(error: unknown): error is ForbiddenError {
+  return (
+    error instanceof Error &&
+    error.name === 'ForbiddenError' &&
+    (error as { status?: number }).status === 403
+  );
+}
+
 class BodyTooLargeError extends Error {
   constructor(readonly limit: number) {
     super(`request body exceeds ${limit} bytes`);
@@ -337,11 +349,14 @@ export async function handleExtensionRequest(
   let actor: Actor | null = null;
   try {
     actor = (await deps.resolveActor?.(request)) ?? null;
-    if (mounted.route.public !== true) {
+    if (mounted.route.customer === true) {
+      // Any signed-in customer; the handler scopes to ctx.actor.id. Staff and anonymous callers are refused.
+      if (actor?.kind !== 'customer') throw new ForbiddenError('customer');
+    } else if (mounted.route.public !== true) {
       await deps.kernel.authorizer.authorize(actor, mounted.route.permission as string);
     }
   } catch (error) {
-    if (error instanceof ForbiddenError)
+    if (isForbidden(error))
       return finish(json(actor ? 403 : 401, actor ? 'forbidden' : 'unauthenticated', requestId));
     log.error(errorFields(error), 'authorization failed');
     return finish(json(500, 'internal_error', requestId));

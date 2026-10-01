@@ -166,6 +166,28 @@ describe('defineExtension', () => {
     expect(() => defineExtension({ ...base, routes: [{ ...r, public: true }] })).not.toThrow();
   });
 
+  it('a route may be for signed-in customers, but only one audience at a time and never admin/webhook', () => {
+    const r = {
+      kind: 'api' as const,
+      method: 'POST' as const,
+      path: '/x',
+      handler: async () => new Response(),
+    };
+    expect(() => defineExtension({ ...base, routes: [{ ...r, customer: true }] })).not.toThrow();
+    expect(issuesOf({ ...base, routes: [{ ...r, customer: true, public: true }] }).join()).toMatch(
+      /exactly one/,
+    );
+    expect(
+      issuesOf({
+        ...base,
+        routes: [{ ...r, customer: true, permission: 'base.orders.read' }],
+      }).join(),
+    ).toMatch(/exactly one/);
+    expect(issuesOf({ ...base, routes: [{ ...r, kind: 'admin', customer: true }] }).join()).toMatch(
+      /storefront\/api routes only/,
+    );
+  });
+
   it('route response opt-outs are validated: a shared cache only on public GET routes', () => {
     const r = {
       kind: 'api' as const,

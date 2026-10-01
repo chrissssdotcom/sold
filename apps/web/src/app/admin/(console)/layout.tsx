@@ -2,6 +2,8 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import instanceConfig from '../../../../../../sold.config';
 import { allowed, requireStaff } from '../../../server/admin/session';
+import { adminScreens } from '../../../server/extension-ui';
+import { permissionFor } from '../../../server/authorizer';
 import { Nav, SignOut, type NavItem } from '../_components/nav';
 import { ToastProvider } from '../_components/toast';
 
@@ -60,9 +62,20 @@ const ITEMS: (NavItem & { permission: string })[] = [
 
 export default async function Console({ children }: { children: ReactNode }) {
   const user = await requireStaff();
-  const items = ITEMS.filter((i) => allowed(user, i.permission)).map(
+  const base = ITEMS.filter((i) => allowed(user, i.permission)).map(
     ({ permission: _p, ...rest }) => rest,
   );
+  // Screens contributed by enabled extensions, shown only to staff who hold the screen's permission.
+  const contributed: NavItem[] = adminScreens()
+    .filter((s) => allowed(user, permissionFor(s.permission)))
+    .sort((a, b) => a.section.localeCompare(b.section) || a.order - b.order)
+    .map((s) => ({
+      href: `/admin/ext/${s.extension}${s.path === '/' ? '' : s.path}`,
+      label: s.title,
+      icon: 'puzzle' as const,
+      group: s.section,
+    }));
+  const items = [...base, ...contributed];
   return (
     <ToastProvider>
       <a className="skip" href="#content">

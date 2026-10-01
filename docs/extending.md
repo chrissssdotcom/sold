@@ -296,3 +296,31 @@ context. For anything that touches the database, see `packages/core/src/extensio
 - The SDK is a versioned public API with its own changelog (`packages/extension-sdk/CHANGELOG.md`). Deprecations warn for at
   least one minor version before removal; removals happen only in a major version.
 - `pnpm sold upgrade:check` reports, per extension, whether it is compatible with an upcoming Base release.
+
+## UI contributions: what is wired and how
+
+| Contribution               | Where it shows up                                                                                                      | Status                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `blocks`                   | Page builder, as `<extension>/<type>`; rendered by the page renderer next to Base blocks                               | wired                                                                     |
+| `slots`                    | `product.detail.aside` (product page), `storefront.footer` (every storefront page), `account.dashboard` (account page) | wired; the other slots in `SlotMap` are declared but **not rendered yet** |
+| `adminScreens`             | Console nav (under the screen's `nav.section`) and `/admin/ext/<extension>/<path>`, hosted inside the console shell    | wired; permission checked on the server                                   |
+| `routes` (`kind: 'admin'`) | `/admin/x/<extension>/...` (staff only)                                                                                | wired                                                                     |
+| `routes` (`api`/`webhook`) | `/x/<extension>/...`                                                                                                   | wired                                                                     |
+| `pages`                    | `/x/<extension>` storefront pages                                                                                      | **not wired yet**                                                         |
+
+Rules that make this safe:
+
+- **Route audience.** Exactly one of `permission` (staff holding that permission, via the same `can()` as the admin API), `customer: true` (any signed-in customer; the
+  handler scopes to `ctx.actor.id`; staff are refused), or `public: true`. Cookie-authenticated writes pass Base's same-origin check; a cross-site POST is treated as signed out.
+  `base.*` permissions map onto RBAC (`base.orders.read` is satisfied by `orders:read`); extension permissions (`<ext>.<thing>.<action>`) are exact grants and can be
+  given to roles in the console.
+- **Slots are isolated.** Each contribution is lazy-loaded and wrapped in an error boundary: if it throws, that slot renders nothing and the page survives.
+- **Browser code lives in `*.client.tsx`.** It has the same strict import rules as everything else; the one extra capability is global `fetch` (same-origin calls to the
+  extension's own routes). Other network globals stay banned. Server I/O still belongs in `*.route.ts`, `*.observer.ts`, `*.job.ts`.
+- **Extension blocks cannot touch the database** (their renderers are strict files). They get validated props and `ctx`; load data client-side from the extension's own
+  public route, as `reviews` does.
+- Extensions can **read** Base's `orders`, `order_lines`, `products`, `product_variants`, `variant_prices`, `carts`, `cart_lines` (the documented allowlist). They cannot read
+  users, sessions, payments or audit data.
+
+The `reviews` extension (`extensions/reviews`) is the worked example of all of the above: route audiences, a slot, a block, an admin screen, a migration and a verified-buyer
+rule against Base's order tables.

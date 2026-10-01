@@ -54,8 +54,13 @@ export interface RouteDefinition<C = RouteContext> {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Relative to `/x/<extension>` (storefront/api/webhook) or `/admin/x/<extension>` (admin). Params: `:id`. */
   path: string;
-  /** Permission checked through `authorize()`. Exactly one of `permission` or `public: true`. */
+  /** Permission checked through `authorize()`. Exactly one of `permission`, `customer: true` or `public: true`. */
   permission?: string;
+  /**
+   * Any signed-in **customer** (not staff, not anonymous). For things like "post my review" where the handler scopes
+   * everything to `ctx.actor.id`. State-changing requests also pass Base's same-origin check. Storefront/api routes only.
+   */
+  customer?: boolean;
   /** Explicitly unauthenticated. Required (and only allowed) for webhooks, which verify their own signature. */
   public?: boolean;
   /**
@@ -271,6 +276,7 @@ const shapeSchema = z.object({
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
         path: z.string(),
         permission: z.string().optional(),
+        customer: z.boolean().optional(),
         public: z.boolean().optional(),
         redirects: z.boolean().optional(),
         html: z.boolean().optional(),
@@ -426,8 +432,13 @@ export function defineExtension<S extends SettingsSchema = SettingsSchema>(
     if (!/^(\/([a-z0-9_-]+|:[a-zA-Z][a-zA-Z0-9]*))*\/?$/.test(r.path) && r.path !== '/')
       issues.push(`${where}: path segments must be [a-z0-9_-] or :param`);
     const hasPerm = typeof r.permission === 'string';
-    if (hasPerm === (r.public === true))
-      issues.push(`${where}: declare exactly one of "permission" or "public: true"`);
+    const modes = Number(hasPerm) + Number(r.public === true) + Number(r.customer === true);
+    if (modes !== 1)
+      issues.push(
+        `${where}: declare exactly one of "permission", "customer: true" or "public: true"`,
+      );
+    if (r.customer === true && (r.kind === 'admin' || r.kind === 'webhook'))
+      issues.push(`${where}: "customer: true" is for storefront/api routes only`);
     if (r.kind === 'webhook' && r.public !== true)
       issues.push(`${where}: webhooks must be public (they verify their own signature)`);
     if (r.public === true && r.kind === 'admin')
