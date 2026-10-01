@@ -1,5 +1,7 @@
 import { BASE_VERSION } from '@sold/core';
 import { discoverExtensions, DiscoveryError } from '@sold/core/extensions/discovery';
+
+type ConfigLoader = Parameters<typeof discoverExtensions>[1];
 import { ExtensionLoadError, resolveLoadOrder } from '@sold/core/extensions';
 import type { CliContext } from '../lib/context';
 import { CliError, ExitCode } from '../lib/errors';
@@ -8,9 +10,9 @@ import { CliError, ExitCode } from '../lib/errors';
  * `sold ext:list`: the resolved load order, or every reason it cannot boot (incompatible Base, missing or
  * disabled dependencies, cycles). The same check the app runs at boot, run ahead of time (and in CI).
  */
-export async function extList(ctx: CliContext): Promise<void> {
+export async function extList(ctx: CliContext, loadConfig?: ConfigLoader): Promise<void> {
   try {
-    const found = await discoverExtensions(ctx.cwd);
+    const found = await discoverExtensions(ctx.cwd, loadConfig);
     for (const w of found.warnings) ctx.out.warn(w);
     const order = resolveLoadOrder({
       baseVersion: BASE_VERSION,

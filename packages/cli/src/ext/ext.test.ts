@@ -3,6 +3,7 @@ import { cpSync, existsSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { BASE_VERSION } from '@sold/core';
 import { defineConfig } from '@sold/core/config';
 import { discoverExtensions } from '@sold/core/extensions/discovery';
 import { lintExtensionMigrationDir } from '@sold/db/lint';
@@ -51,7 +52,7 @@ describe('ext:new', () => {
       expect(pkg).toMatchObject({
         name: '@sold-ext/gift-wrap',
         description: 'Offer gift wrapping',
-        sold: { requires: { base: '^0.1.0' } },
+        sold: { requires: { base: baseRangeFor(BASE_VERSION) } },
       });
       const index = readFileSync(join(dir, 'extensions/gift-wrap/src/index.ts'), 'utf8');
       expect(index).toContain("name: 'gift-wrap'");
@@ -239,7 +240,8 @@ describe('ext:sync, ext:list, ext:docs (real repository)', () => {
 
   it('ext:list shows the load order for the demo config', async () => {
     const ctx = makeContext({ cwd: repoRoot });
-    await extList(ctx);
+    // The demo config is injected: an instance repository's own sold.config.ts is customer-owned and must not decide this test.
+    await extList(ctx, async () => config(['loyalty-points', 'reviews', 'tiktok-social']));
     expect(ctx.out.lines.join('\n')).toMatch(
       /3 extension\(s\) load in this order:[\s\S]*1\. loyalty-points@1\.0\.0 \[first-party\] \(hot path\)[\s\S]*2\. reviews@0\.1\.0 \[first-party\]/,
     );
@@ -250,7 +252,7 @@ describe('ext:sync, ext:list, ext:docs (real repository)', () => {
     const doc = renderExtensionReference(found.extensions[0]!);
     for (const expected of [
       '## loyalty-points',
-      '`^0.1.0`',
+      `\`${found.extensions[0]!.manifest.requires.base}\``, // whatever Base range the extension declares (it moves with every release)
       'yes (budget 10 ms per call)',
       '`ext_loyalty_points_`',
       '`0001_init.sql`',
@@ -315,9 +317,13 @@ describe('ext:migrate', () => {
   it('--dry-run touches nothing', async () => {
     const { extMigrate } = await import('./migrate');
     const ctx = makeContext({ cwd: repoRoot, dryRun: true });
-    await extMigrate(ctx, async () => {
-      throw new Error('must not be called');
-    });
+    await extMigrate(
+      ctx,
+      async () => {
+        throw new Error('must not be called');
+      },
+      async () => config(['loyalty-points']),
+    );
     expect(ctx.out.lines.join()).toMatch(/would migrate loyalty-points: 0001_init\.sql/);
   });
 });

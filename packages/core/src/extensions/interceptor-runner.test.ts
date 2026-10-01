@@ -466,7 +466,7 @@ describe('InterceptorRunner: pools, budgets and breakers', () => {
 
   it('a bounded wait fails fast as saturated, never as a timeout, and does not open the breaker', async () => {
     const { r, metrics } = runner(
-      [loaded('healthy', 0, [{ failPolicy: 'closed', handler: () => sleep(8) }], 20)],
+      [loaded('healthy', 0, [{ failPolicy: 'closed', handler: () => sleep(8) }], 50)],
       {
         pool: new Semaphore('one', 1, 50),
         maxQueueWaitMs: 12,

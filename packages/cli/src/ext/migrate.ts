@@ -83,10 +83,11 @@ export const realKernelFactory: KernelFactory = async (ctx, found) => {
 export async function extMigrate(
   ctx: CliContext,
   factory: KernelFactory = realKernelFactory,
+  loadConfig?: Parameters<typeof discoverExtensions>[1],
 ): Promise<void> {
   let found: DiscoveryResult;
   try {
-    found = await discoverExtensions(ctx.cwd);
+    found = await discoverExtensions(ctx.cwd, loadConfig);
   } catch (error) {
     if (error instanceof DiscoveryError) throw new CliError(error.message, ExitCode.failure);
     throw error;
