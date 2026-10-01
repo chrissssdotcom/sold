@@ -10,16 +10,22 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --project unit --passWithNoTests",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration",
+    "bench": "tsx bench/throughput.ts"
   },
   "dependencies": {
     "@sold/core": "workspace:*",
+    "cron-parser": "^5.0.0",
+    "ioredis": "^6.0.0",
     "pg-boss": "^12.35.0"
   },
   "devDependencies": {
     "@sold/config": "workspace:*",
     "@sold/db": "workspace:*",
     "@sold/testing": "workspace:*",
+    "@types/pg": "^8.0.0",
+    "pg": "^8.0.0",
+    "tsx": "^4.20.0",
     "vitest": "^5.0.3"
   }
 }

@@ -123,3 +123,28 @@ Real idle and active cost per profile is PENDING(phase-0, needs a cloud subscrip
 | Tier | Throughput measured  | Limiting component | Cost per headroom | Recommended sizing | Date |
 | ---- | -------------------- | ------------------ | ----------------- | ------------------ | ---- |
 | all  | **not yet measured** | n/a                | n/a               | n/a                | n/a  |
+
+## Job queue: measured behaviour and the Redis adapter (Phase 7)
+
+`packages/jobs/bench/throughput.ts` (`pnpm --filter @sold/jobs bench`) enqueues 3,000 no-op jobs and drains them. **One 4-core / 16 GB sandbox with Postgres, Redis and the benchmark all sharing it, handler does nothing: a sanity
+measurement and a relative comparison, not a capacity figure.** Class `critical` (concurrency 20); repeated runs agree within a few percent.
+
+| Adapter                          | Enqueue  | Drain (queue → handler) | Notes                                    |
+| -------------------------------- | -------- | ----------------------- | ---------------------------------------- |
+| Redis (`RedisQueue`), poll 50 ms | ~9-12k/s | ~11-12k/s               | refills a slot the moment a job finishes |
+| pg-boss, batch 1, poll 500 ms    | ~2.4k/s  | **~40/s**               | = concurrency 20 / poll 0.5 s            |
+| pg-boss, batch 10                | ~2.6k/s  | ~430/s                  | effective concurrency becomes 200        |
+| pg-boss, batch 25                | ~2.6k/s  | ~1,200/s                | effective concurrency becomes 500        |
+
+What this teaches (and what changed because of it):
+
+1. **pg-boss's drain rate for fast jobs is poll-bound, not CPU-bound**: each worker slot waits one polling interval between fetches, so rate ≈ `concurrency × batchSize / poll`. With the production default poll of 2 s a `critical` queue of instant jobs drains at
+   ~10 jobs/s. Real jobs that take 100 ms+ are bounded by their own duration, but a burst of tiny jobs (many extension observers per order) can build a backlog even though nothing is "slow". The age-based alerts (`maxAgeSeconds`) are what catch it.
+   `PgBossQueue` now takes `batchSize` (default 1, unchanged behaviour); raising it trades the per-queue concurrency limit (it becomes `concurrency × batchSize`), so use it only for queues of small idempotent jobs.
+2. **The Redis adapter is ~30x faster at draining tiny jobs and ~4x at enqueueing**, at the cost of durability: Redis's persistence, not the order database's. With no AOF a Redis crash can lose recently enqueued jobs; use AOF `everysec` or keep pg-boss when losing seconds of jobs is not acceptable.
+   Things that already don't use the queue (the outbox relay, email and webhook delivery) are unaffected: they run their own loops.
+3. **Switch criteria** (replacing the earlier assumptions): move a queue to Redis when the _oldest-job age_ alert fires on a queue whose handlers are fast, or when pg-boss's own tables show up in `pg_stat_statements` as a top consumer. Not before.
+
+`RedisQueue` is at-least-once like pg-boss: retries with exponential backoff and jitter, dead-letter after the retry limit, idempotent enqueue (7-day memory), delayed jobs, lease expiry (a crashed worker's job is retried and the lost attempt counts), graceful stop, cron schedules
+that fire once across a fleet. Verified by 11 contract tests against a real Redis (including two workers never double-claiming, a hung worker's job being recovered by another, and a slow test that two workers on one cron fire it once). Not verified: behaviour under Redis failover or
+cluster mode (it uses multi-key Lua scripts on one hash slot per queue only if you use a single node or hash tags); not wired into the web or worker entrypoints (they still construct `PgBossQueue`); a Service Bus adapter does not exist.

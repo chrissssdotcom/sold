@@ -21,6 +21,13 @@ export interface PgBossQueueOptions {
   poolMax?: number;
   pollingIntervalSeconds?: number;
   /**
+   * Jobs fetched per poll by each worker slot (default 1). A slot waits one polling interval between fetches, so with fast
+   * jobs the drain rate is about `concurrency x batchSize / pollingIntervalSeconds`. Note the trade: a batch runs concurrently,
+   * so the effective concurrency becomes `class concurrency x batchSize` (the class limit is per fetch, not per job).
+   * Raise it only for queues of small, idempotent, fast jobs (measurements in docs/scaling.md).
+   */
+  batchSize?: number;
+  /**
    * `producer` only enqueues (web): no maintenance/supervision and no scheduler, so N web replicas do not each run
    * pg-boss housekeeping. `worker` (default) does everything.
    */
@@ -40,10 +47,12 @@ export class PgBossQueue implements JobQueue {
   private readonly schema: string;
   private readonly definitions = new Map<string, QueueDefinition>();
   private readonly pollingIntervalSeconds: number;
+  private readonly batchSize: number;
 
   constructor(opts: PgBossQueueOptions) {
     this.schema = opts.schema ?? 'pgboss';
     this.pollingIntervalSeconds = opts.pollingIntervalSeconds ?? 2;
+    this.batchSize = Math.max(1, Math.min(50, opts.batchSize ?? 1));
     this.boss = new PgBoss({
       connectionString: opts.connectionString,
       schema: this.schema,
@@ -112,19 +121,24 @@ export class PgBossQueue implements JobQueue {
       {
         localConcurrency: queueClassPolicies[def.class].concurrency,
         pollingIntervalSeconds: this.pollingIntervalSeconds,
-        batchSize: 1,
+        batchSize: this.batchSize,
       },
       async (jobs) => {
-        for (const job of jobs) {
-          // A throw here fails the job; pg-boss then retries with backoff and finally dead-letters it.
-          await handler({
+        const run = (job: (typeof jobs)[number]) =>
+          handler({
             id: job.id,
             queue,
             data: job.data,
             retryCount: job.retryCount,
             signal: job.signal,
           });
-        }
+        // A throw here fails the job; pg-boss then retries with backoff and finally dead-letters it.
+        if (jobs.length === 1) return void (await run(jobs[0]!));
+        // A batch runs its jobs concurrently. pg-boss fails or completes a batch as a unit, so one failure re-runs the whole
+        // batch: safe because every handler is at-least-once and idempotent by contract, merely wasteful on failure.
+        const results = await Promise.allSettled(jobs.map(run));
+        const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (failed) throw failed.reason;
       },
     );
   }

@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 
 /**
- * Vendor-neutral job queue (Section 8A.7). pg-boss is the default adapter; a Service Bus adapter
- * ships for when queue throughput or age SLOs outgrow Postgres (thresholds in docs/scaling.md).
+ * Vendor-neutral job queue (Section 8A.7). pg-boss is the default adapter; a Redis adapter (`RedisQueue` in @sold/jobs) is the
+ * escape hatch for when queue throughput or age SLOs outgrow Postgres (thresholds and measurements in docs/scaling.md). A Service
+ * Bus adapter is NOT built.
  * Nothing outside an adapter may import a queue vendor.
  */
 
