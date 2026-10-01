@@ -90,6 +90,9 @@ importers:
       '@sold/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
+      '@sold/notify':
+        specifier: workspace:*
+        version: link:../../packages/notify
       '@sold/payments':
         specifier: workspace:*
         version: link:../../packages/payments
@@ -410,6 +413,37 @@ importers:
       '@sold/testing':
         specifier: workspace:*
         version: link:../testing
+      vitest:
+        specifier: ^5.0.3
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/notify:
+    dependencies:
+      '@sold/commerce':
+        specifier: workspace:*
+        version: link:../commerce
+      '@sold/core':
+        specifier: workspace:*
+        version: link:../core
+      '@sold/db':
+        specifier: workspace:*
+        version: link:../db
+      nodemailer:
+        specifier: ^10.0.13
+        version: 10.0.13
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@sold/config':
+        specifier: workspace:*
+        version: link:../config
+      '@sold/testing':
+        specifier: workspace:*
+        version: link:../testing
+      '@types/nodemailer':
+        specifier: ^8.0.2
+        version: 8.0.2
       vitest:
         specifier: ^5.0.3
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.3)(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
@@ -1901,6 +1935,9 @@ packages:
   '@types/node@26.6.3':
     resolution: {integrity: sha512-dsqMQQoeTLqu9wynDD00q573mNzso3IdQOAfHRJqLCcmCFPoGo9A1bDpUcv/9tnKpErQWv9uKeGfl37EIS02Yg==}
 
+  '@types/nodemailer@8.0.2':
+    resolution: {integrity: sha512-c7M5ox8p0nEOfbJ2E9Qcmt8/QCu/VzsiAhzBiZbvky2PhKZDHpKB3sQHBM5MEZNkCfBOaS6S9//AGPRTNB7IaA==}
+
   '@types/pg@8.23.1':
     resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
 
@@ -2944,6 +2981,10 @@ packages:
         optional: true
       sass:
         optional: true
+
+  nodemailer@10.0.13:
+    resolution: {integrity: sha512-SzG86OlvcW/NNhUFC6uROMwRTL4n7MswfQqC/T8mhkmnY1YVa23zUEMYi4ijSeXSl9GLz9ZeTJDUatEDuY5FeQ==}
+    engines: {node: '>=20.0.0'}
 
   non-error@0.1.0:
     resolution: {integrity: sha512-TMB1uHiGsHRGv1uYclfhivcnf0/PdFp2pNqRxXjncaAsjYMoisaQJI+SSZCqRq+VliwRTC8tsMQfmrWjDMhkPQ==}
@@ -4817,6 +4858,10 @@ snapshots:
     dependencies:
       undici-types: 8.9.0
 
+  '@types/nodemailer@8.0.2':
+    dependencies:
+      '@types/node': 26.6.3
+
   '@types/pg@8.23.1':
     dependencies:
       '@types/node': 26.6.3
@@ -5798,6 +5843,8 @@ snapshots:
       - '@babel/core'
       - '@types/node'
       - babel-plugin-macros
+
+  nodemailer@10.0.13: {}
 
   non-error@0.1.0: {}
 

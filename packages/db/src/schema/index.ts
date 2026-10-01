@@ -100,3 +100,4 @@ export const extensionSettings = pgTable(
 export * from './commerce';
 export * from './storefront';
 export * from './identity';
+export * from './notify';

@@ -94,6 +94,12 @@ export const envSchema = z
     /** Card payments via Stripe. Both must be set to enable the gateway. */
     STRIPE_SECRET_KEY: z.string().min(8).optional(),
     STRIPE_WEBHOOK_SECRET: z.string().min(8).optional(),
+    /** Outbound email. Postmark wins if both are set. With neither, local development logs emails instead of sending. */
+    SMTP_URL: z.string().url().optional(),
+    POSTMARK_SERVER_TOKEN: z.string().min(8).optional(),
+    /** `Name <address>`; the address must be one the provider is authorised to send for (SPF/DKIM). */
+    EMAIL_FROM: z.string().min(5).max(200).optional(),
+    SOLD_PUBLIC_URL: z.string().url().optional(),
     OTEL_EXPORTER_OTLP_ENDPOINT: optionalUrl,
   })
   .superRefine((env, ctx) => {

@@ -3,6 +3,7 @@ import { getCommerce } from '../../../../server/commerce';
 import { errorResponse, json, readJson } from '../../../../server/commerce-http';
 import { assertSameOrigin } from '../../../../server/csrf';
 import { clientIp, getIdentity, sessionCookie } from '../../../../server/identity';
+import { buildNotifications, publicUrl } from '../../../../server/notify';
 import { route } from '../../../../server/route';
 import { getRuntime } from '../../../../server/runtime';
 import { PRIVATE, cartIdFromRequest, withCartCookie } from '../../../../server/storefront';
@@ -31,6 +32,16 @@ export const POST = route(async (request) => {
       { user: { id: user.id, email: user.email, name: user.name } },
       { status: 201, headers: PRIVATE },
     );
+    // Best effort and idempotent per user: a mail-queue problem must never fail a sign-up.
+    const env = getRuntime().env;
+    await buildNotifications(env)
+      .enqueue(db.primary, {
+        dedupeKey: `welcome:${user.id}`,
+        template: 'welcome',
+        to: user.email,
+        data: { name: user.name, accountUrl: `${publicUrl(env)}/en-au/account` },
+      })
+      .catch(() => false);
     const guest = cartIdFromRequest(request);
     if (guest) {
       const { carts } = await getCommerce();

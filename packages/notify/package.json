@@ -1,0 +1,29 @@
+{
+  "name": "@sold/notify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration"
+  },
+  "dependencies": {
+    "@sold/commerce": "workspace:*",
+    "@sold/core": "workspace:*",
+    "@sold/db": "workspace:*",
+    "nodemailer": "^10.0.13",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sold/config": "workspace:*",
+    "@sold/testing": "workspace:*",
+    "@types/nodemailer": "^8.0.2",
+    "vitest": "^5.0.3"
+  }
+}

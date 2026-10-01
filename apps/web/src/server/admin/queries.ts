@@ -157,6 +157,8 @@ export async function dashboard(db: PrimaryDb) {
     needs_attention: number;
     low_stock: number;
     products_active: number;
+    emails_failed: number;
+    emails_stuck: number;
   }>(sql`
     SELECT
       (SELECT count(*)::int FROM orders WHERE placed_at > now() - interval '24 hours') AS orders_24h,
@@ -165,7 +167,9 @@ export async function dashboard(db: PrimaryDb) {
       (SELECT count(*)::int FROM orders WHERE status = 'pending_payment') AS pending,
       (SELECT count(*)::int FROM payment_events WHERE error = 'needs_attention') AS needs_attention,
       (SELECT count(*)::int FROM inventory_levels WHERE on_hand - reserved <= 5) AS low_stock,
-      (SELECT count(*)::int FROM products WHERE status = 'active') AS products_active`);
+      (SELECT count(*)::int FROM products WHERE status = 'active') AS products_active,
+      (SELECT count(*)::int FROM notifications WHERE status = 'failed') AS emails_failed,
+      (SELECT count(*)::int FROM notifications WHERE status IN ('queued','sending') AND created_at < now() - interval '10 minutes') AS emails_stuck`);
   const row = r.rows[0];
   const base = await db.execute<{ currency: string }>(
     sql`SELECT currency FROM orders ORDER BY id DESC LIMIT 1`,
@@ -178,6 +182,8 @@ export async function dashboard(db: PrimaryDb) {
     paymentsNeedingAttention: row?.needs_attention ?? 0,
     lowStock: row?.low_stock ?? 0,
     activeProducts: row?.products_active ?? 0,
+    emailsFailed: row?.emails_failed ?? 0,
+    emailsStuck: row?.emails_stuck ?? 0,
   };
 }
 

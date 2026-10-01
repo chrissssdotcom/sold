@@ -52,6 +52,15 @@ export default async function Dashboard() {
           <Link href="/admin/products">Review products →</Link>
         </div>
         <div className="card stat">
+          <div className="k">Emails failed or stuck (&gt; 10 min queued)</div>
+          <div className={`v${d.emailsFailed + d.emailsStuck > 0 ? ' warn' : ''}`}>
+            {d.emailsFailed + d.emailsStuck}
+          </div>
+          <span className="muted">
+            A stuck queue usually means no email provider is configured.
+          </span>
+        </div>
+        <div className="card stat">
           <div className="k">Payment events that need a person</div>
           <div className={`v${d.paymentsNeedingAttention > 0 ? ' warn' : ''}`}>
             {d.paymentsNeedingAttention}

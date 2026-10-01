@@ -41,6 +41,7 @@ const config: NextConfig = {
     '@sold/core',
     '@sold/db',
     '@sold/commerce',
+    '@sold/notify',
     '@sold/payments',
     '@sold/content',
     '@sold/storefront',

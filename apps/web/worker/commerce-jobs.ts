@@ -4,6 +4,8 @@ import type { EventName } from '@sold/extension-sdk';
 import type { JobQueue } from '@sold/core/jobs';
 import type { PrimaryDb } from '@sold/db';
 import { SamlClient, SessionService } from '@sold/identity';
+import { notifyOnEvent } from '@sold/notify';
+import { buildNotifications, buildTransport, orderLink } from '../src/server/notify';
 import { buildPayments } from '../src/server/payments';
 
 interface Log {
@@ -37,6 +39,14 @@ export async function startCommerceJobs(opts: {
   const { db, queue, log, signal } = opts;
   const commerce = createCommerce();
   const payments = buildPayments(opts.env, commerce);
+  const notify = buildNotifications(opts.env);
+  const transport = buildTransport(opts.env);
+  const orderUrl = orderLink(opts.env);
+  if (!transport)
+    log.warn(
+      {},
+      'no email transport configured (set POSTMARK_SERVER_TOKEN or SMTP_URL): emails will queue but not send',
+    );
 
   await queue.ensureQueue({ name: 'commerce.sweep', class: 'critical' });
   await queue.work('commerce.sweep', async () => {
@@ -62,10 +72,30 @@ export async function startCommerceJobs(opts: {
   await queue.schedule('identity.sweep', '17 * * * *');
 
   const publish = async (e: RelayEvent): Promise<void> => {
+    // Internal consumers first (idempotent by event id), then extensions. A failure here retries the whole event.
+    await notifyOnEvent({ db, notify, orders: commerce.orders, orderUrl }, e);
     // Events no extension can subscribe to are still "published" (nothing to deliver).
     if (!KNOWN_EVENTS.has(e.eventType)) return;
     await opts.publish(e.eventType as EventName, e.payload as never, { eventId: e.eventId });
   };
+
+  // Email delivery: a tight loop like the outbox relay (an order confirmation should arrive in seconds), backing off when idle.
+  if (transport) {
+    void (async () => {
+      let idle = 0;
+      while (!signal.aborted) {
+        try {
+          const r = await notify.deliverDue(db, transport, { batch: 20 });
+          idle = r.sent + r.retried + r.failed + r.suppressed === 0 ? Math.min(idle + 1, 10) : 0;
+          if (r.failed > 0) log.error(r, 'emails failed permanently');
+        } catch (error) {
+          idle = 10;
+          log.error({ err: error }, 'email delivery pass failed');
+        }
+        if (idle > 0) await new Promise((r) => setTimeout(r, 200 * idle + Math.random() * 200));
+      }
+    })();
+  }
 
   void (async () => {
     let idle = 0;
