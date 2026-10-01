@@ -390,3 +390,46 @@ describe('audit log', () => {
     expect(after[0]?.n).toBe(before[0]?.n);
   });
 });
+
+describe('owner bootstrap', () => {
+  it('creates an owner with a one-time generated password that works, and is idempotent', async () => {
+    const { bootstrapOwner } = await import('./bootstrap');
+    const e = email();
+    const first = await bootstrapOwner(db.primary, auth, { email: e, name: 'Boss' });
+    expect(first.created).toBe(true);
+    expect(first.generatedPassword).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    const login = await auth.login(
+      db.primary,
+      { email: e, password: first.generatedPassword! },
+      { kind: 'staff' },
+    );
+    expect((await sessions.resolve(db.primary, login.token))?.user.permissions).toContain('*');
+    const again = await bootstrapOwner(db.primary, auth, { email: e });
+    expect(again).toMatchObject({ created: false, generatedPassword: null });
+    // the original password still works: re-running never resets it
+    await expect(
+      auth.login(db.primary, { email: e, password: first.generatedPassword! }, { kind: 'staff' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('re-enables and re-promotes an existing staff user, but never converts a customer', async () => {
+    const { bootstrapOwner } = await import('./bootstrap');
+    const e = email();
+    const staff = await auth.createStaff(db.primary, {
+      email: e,
+      name: 'S',
+      password: PW,
+      roles: ['support'],
+      actor,
+    });
+    await auth.setStatus(db.primary, staff.id, 'disabled', actor);
+    const r = await bootstrapOwner(db.primary, auth, { email: e });
+    expect(r.created).toBe(false);
+    const login = await auth.login(db.primary, { email: e, password: PW }, { kind: 'staff' });
+    expect((await sessions.resolve(db.primary, login.token))?.user.permissions).toContain('*');
+    const c = await auth.registerCustomer(db.primary, { email: email(), password: PW });
+    await expect(bootstrapOwner(db.primary, auth, { email: c.email })).rejects.toMatchObject({
+      code: 'email_in_use_by_customer',
+    });
+  });
+});

@@ -39,4 +39,4 @@ export function negotiateMarket(header: string | null): Market {
 }
 
 /** Paths that are not storefront pages: never locale-prefixed. */
-export const reservedPrefixes = ['api', 'x', 'admin', 'metrics', 'art', '_next', 'fonts'];
+export const reservedPrefixes = ['api', 'x', 'admin', 'scim', 'metrics', 'art', '_next', 'fonts'];

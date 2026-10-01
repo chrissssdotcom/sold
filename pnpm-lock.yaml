@@ -84,6 +84,9 @@ importers:
       '@sold/extension-sdk':
         specifier: workspace:*
         version: link:../../packages/extension-sdk
+      '@sold/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
       '@sold/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
@@ -182,6 +185,9 @@ importers:
       '@sold/extension-sdk':
         specifier: workspace:*
         version: link:../extension-sdk
+      '@sold/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@sold/jobs':
         specifier: workspace:*
         version: link:../jobs

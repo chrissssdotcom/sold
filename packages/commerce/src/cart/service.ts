@@ -236,6 +236,24 @@ export class CartService {
     });
   }
 
+  /**
+   * Attach an anonymous cart to a customer who just signed in. If they already have an open cart in the same currency the two
+   * are merged (quantities add, capped) and that cart wins; otherwise the guest cart simply becomes theirs.
+   */
+  async claim(db: DbOrTx, guestCartId: string, customerId: string): Promise<CartRecord> {
+    return db.transaction(async (tx) => {
+      const guest = await this.get(tx, guestCartId);
+      if (guest.status !== 'open' || guest.customerId) return guest;
+      const existing = await tx.execute<{ id: string }>(
+        sql`SELECT id FROM carts WHERE customer_id = ${customerId} AND status = 'open' AND currency = ${guest.currency} AND id <> ${guestCartId} ORDER BY updated_at DESC LIMIT 1`,
+      );
+      const mine = existing.rows[0]?.id;
+      if (mine) return this.merge(tx, guestCartId, mine);
+      await tx.update(carts).set({ customerId }).where(eq(carts.id, guestCartId));
+      return this.get(tx, guestCartId);
+    });
+  }
+
   /** Mark converted. Called by checkout inside the order transaction. */
   async markConverted(tx: DbOrTx, cartId: string): Promise<void> {
     await tx.update(carts).set({ status: 'converted' }).where(eq(carts.id, cartId));

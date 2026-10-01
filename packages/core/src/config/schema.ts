@@ -127,6 +127,62 @@ export const soldConfigSchema = z
         paymentWindowMinutes: 30,
         inventoryGate: false,
       }),
+    /**
+     * Staff sign-in beyond passwords. Secrets are never in this file: `clientSecretEnv` names the environment variable that
+     * holds the OIDC client secret. SSO is off unless configured; SCIM is off unless enabled.
+     */
+    identity: z
+      .object({
+        oidc: z
+          .object({
+            id: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/),
+            label: z.string().max(60).default('Single sign-on'),
+            issuer: z.url(),
+            clientId: z.string().min(1),
+            clientSecretEnv: z
+              .string()
+              .regex(/^[A-Z][A-Z0-9_]*$/)
+              .optional(),
+            scopes: z.array(z.string()).optional(),
+            allowedEmailDomains: z.array(z.string().toLowerCase()).optional(),
+            autoLinkByEmail: z.boolean().default(false),
+            autoProvision: z.boolean().default(false),
+            defaultRoles: z.array(z.string()).default([]),
+            groupsClaim: z.string().optional(),
+            groupRoleMap: z.record(z.string(), z.array(z.string())).optional(),
+          })
+          .optional(),
+        saml: z
+          .object({
+            id: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/),
+            label: z.string().max(60).default('Single sign-on'),
+            entryPoint: z.url(),
+            /** Our entity id (also the audience). Defaults to `<public url>/api/admin/auth/saml/metadata`. */
+            issuer: z.string().optional(),
+            /** The IdP's signing certificate(s), PEM (public: safe to keep here), or the env var that holds it. */
+            idpCert: z.union([z.string(), z.array(z.string())]).optional(),
+            idpCertEnv: z
+              .string()
+              .regex(/^[A-Z][A-Z0-9_]*$/)
+              .optional(),
+            emailAttribute: z.string().optional(),
+            nameAttribute: z.string().optional(),
+            groupsAttribute: z.string().optional(),
+            allowedEmailDomains: z.array(z.string().toLowerCase()).optional(),
+            autoLinkByEmail: z.boolean().default(false),
+            autoProvision: z.boolean().default(false),
+            defaultRoles: z.array(z.string()).default([]),
+            groupRoleMap: z.record(z.string(), z.array(z.string())).optional(),
+          })
+          .optional(),
+        scim: z
+          .object({
+            enabled: z.boolean().default(false),
+            managedRoles: z.array(z.string()).optional(),
+          })
+          .default({ enabled: false }),
+      })
+      .default({ scim: { enabled: false } }),
     theme: z
       .object({
         preset: z.string().default('default'),

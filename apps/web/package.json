@@ -33,6 +33,7 @@
     "@sold/core": "workspace:*",
     "@sold/db": "workspace:*",
     "@sold/extension-sdk": "workspace:*",
+    "@sold/identity": "workspace:*",
     "@sold/jobs": "workspace:*",
     "@sold/payments": "workspace:*",
     "@sold/storefront": "workspace:*",

@@ -42,7 +42,9 @@ export function json(body: unknown, init?: ResponseInit): Response {
 
 /** Map domain and input errors to stable machine-readable responses. Anything else is rethrown (500, no leak). */
 export function errorResponse(error: unknown): Response {
-  if (error instanceof CommerceError)
+  if (error instanceof CommerceError) {
+    // Lockouts tell the client when to come back.
+    const retry = (error as { retryAfterSeconds?: number }).retryAfterSeconds;
     return json(
       {
         error: {
@@ -51,8 +53,9 @@ export function errorResponse(error: unknown): Response {
           ...(error.details ? { details: error.details } : {}),
         },
       },
-      { status: error.status },
+      { status: error.status, ...(retry ? { headers: { 'retry-after': String(retry) } } : {}) },
     );
+  }
   if (error instanceof ZodError)
     return json(
       {

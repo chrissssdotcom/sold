@@ -8,6 +8,7 @@ import { extList } from './ext/list';
 import { extMigrate } from './ext/migrate';
 import { extNew } from './ext/scaffold';
 import { themeList, themeNew } from './theme/scaffold';
+import { userCreateOwner } from './user/owner';
 import { extSync } from './ext/sync';
 import {
   envCost,
@@ -292,6 +293,18 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
           });
         },
       ),
+    );
+
+  // ---- users ---------------------------------------------------------------------------------
+  program
+    .command('user:create-owner')
+    .description('create (or re-enable) an owner account; prints a generated password once')
+    .requiredOption('--email <email>', 'owner email address')
+    .option('--name <name>', 'display name')
+    .action(
+      action(async (context, options: { email: string; name?: string }) => {
+        await userCreateOwner(context, options);
+      }),
     );
 
   // ---- themes --------------------------------------------------------------------------------
