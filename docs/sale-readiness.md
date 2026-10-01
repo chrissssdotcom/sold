@@ -14,7 +14,7 @@ stale `pending_payment` orders, no negative stock, and lists variants with ≤ 5
 
 ## Manual (a script cannot see these)
 
-- [ ] Load test of **this tier** passed recently (`ops/loadtests/`, `docs/capacity-report.md`); the sale's expected peak is below the measured, *cloud-measured* ceiling (the numbers in the report so far are from one local machine and are not a promise).
+- [ ] Load test of **this tier** passed recently (`ops/loadtests/`, `docs/capacity-report.md`); the sale's expected peak is below the measured, _cloud-measured_ ceiling (the numbers in the report so far are from one local machine and are not a promise).
 - [ ] Hot SKUs: stock loaded and verified in Admin; `allowBackorder` false unless intended.
 - [ ] Payment gateway: account limits, webhook endpoint registered for this environment, a real test charge + refund done on this environment.
 - [ ] Email domain authenticated (SPF/DKIM/DMARC); a real test order email viewed in two clients.

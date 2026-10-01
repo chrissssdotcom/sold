@@ -62,4 +62,27 @@ describe('extension compatibility report', () => {
   it('returns an empty report when there is no extensions directory', async () => {
     expect(await checkExtensionCompatibility(tempDir(), '1.0.0')).toEqual([]);
   });
+
+  it('does not judge Base-owned (first-party) extensions by their installed range: the upgrade replaces them', async () => {
+    const dir = withExtensions({
+      'extensions/reviews/package.json': {
+        name: '@sold-ext/reviews',
+        sold: { requires: { base: '^0.1.0' } },
+      },
+      'extensions/acme-loyalty/package.json': {
+        name: '@acme/loyalty',
+        sold: { requires: { base: '^0.1.0' } },
+      },
+    });
+    const baseOwned = (p: string) => p.startsWith('extensions/reviews/');
+    const report = await checkExtensionCompatibility(dir, '0.2.0', { baseOwned });
+    expect(report.map((r) => [r.name, r.status])).toEqual([
+      ['@acme/loyalty', 'incompatible'], // the customer's own extension is still judged
+      ['@sold-ext/reviews', 'replaced'],
+    ]);
+    // After the files are replaced (upgrade:apply) nothing is skipped: the target's own range is checked for real.
+    expect(
+      (await checkExtensionCompatibility(dir, '0.2.0')).map((r) => [r.name, r.status]),
+    ).toContainEqual(['@sold-ext/reviews', 'incompatible']);
+  });
 });

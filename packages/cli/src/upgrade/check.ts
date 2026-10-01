@@ -13,6 +13,7 @@ import {
   type ChangelogEntry,
 } from './changelog';
 import { checkExtensionCompatibility, type ExtensionCompat } from './extensions';
+import { classify, readManifest } from './manifest';
 
 export const BASE_TAG_PREFIX = 'base-v';
 export const BASE_VERSION_PATH = '.sold/base-version';
@@ -116,7 +117,10 @@ export async function upgradeCheck(
       changelogFound = true;
       changes = groupByTag(entriesBetween(parseChangelog(changelog), current, target));
     }
-    extensions = await checkExtensionCompatibility(ctx.cwd, target);
+    const manifest = await readManifest(ctx.cwd);
+    extensions = await checkExtensionCompatibility(ctx.cwd, target, {
+      baseOwned: (path) => classify(path, manifest) === 'base',
+    });
   }
 
   const blocked = extensions.some((e) => e.status === 'incompatible');

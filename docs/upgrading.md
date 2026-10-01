@@ -4,15 +4,15 @@ An instance is **Sold Base plus the customer's own paths**. The customer never e
 
 ## Status: what exists today
 
-| Step                                                                                    | State                                                                                                                                      |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Ownership manifest, `.sold/base-version`, `sold drift:check`                            | **Implemented, unit-tested** (real temporary git repositories)                                                                             |
-| `sold upgrade:check`, `upgrade:plan`, `upgrade:apply`                                   | **Implemented, unit-tested** (real git, process runner mocked for codemods and gates)                                                      |
-| Extension compatibility from `sold.requires.base`                                       | **Implemented**; the manifest field is read from `package.json` until the extension SDK defines the contract (PENDING(phase-1))            |
-| Base publishing side (`base-v<x.y.z>` tags, tagged `CHANGELOG.md`, `upgrades/<x.y.z>/`) | **Convention defined**; no Base release has been cut yet, so the first real upgrade is PENDING(phase-8)                                    |
-| Workflow that opens the upgrade PR on push of `upgrade/*`                               | PENDING: `upgrade:apply --push` pushes the branch; opening the PR from `docs/instance/upgrades/<version>.md` is left to the workflow/human |
-| Automated preview, dev, stage, prod promotion of the upgrade                            | **Written, never run** (`env-up.yml`, `release.yml`); needs a subscription                                                                 |
-| Codemods                                                                                | Mechanism implemented and tested; **there are no real codemods yet**                                                                       |
+| Step                                                                                    | State                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ownership manifest, `.sold/base-version`, `sold drift:check`                            | **Implemented, unit-tested** (real temporary git repositories)                                                                                                                                                                                       |
+| `sold upgrade:check`, `upgrade:plan`, `upgrade:apply`                                   | **Implemented, unit-tested** (real git, process runner mocked for codemods and gates)                                                                                                                                                                |
+| Extension compatibility from `sold.requires.base`                                       | **Implemented**; the manifest field is read from `package.json` until the extension SDK defines the contract (PENDING(phase-1))                                                                                                                      |
+| Base publishing side (`base-v<x.y.z>` tags, tagged `CHANGELOG.md`, `upgrades/<x.y.z>/`) | **Convention defined; `CHANGELOG.md` now exists (`Unreleased`)**; no Base release has been cut. **Rehearsed locally** against a tagged scratch upstream: `customer:new` → `upgrade:check` → `upgrade:plan` → `upgrade:apply` (see "Rehearsal" below) |
+| Workflow that opens the upgrade PR on push of `upgrade/*`                               | PENDING: `upgrade:apply --push` pushes the branch; opening the PR from `docs/instance/upgrades/<version>.md` is left to the workflow/human                                                                                                           |
+| Automated preview, dev, stage, prod promotion of the upgrade                            | **Written, never run** (`env-up.yml`, `release.yml`); needs a subscription                                                                                                                                                                           |
+| Codemods                                                                                | Mechanism implemented and tested; **there are no real codemods yet**                                                                                                                                                                                 |
 
 ## Concepts
 
@@ -100,7 +100,8 @@ Use `upgrade:check --patch-only` and `upgrade:plan <x.y.z> --patch-only`: the to
 1. Update `CHANGELOG.md` with a `## <version> - <date>` section; tag every entry that needs customer attention.
 2. If customers must change something, add an idempotent codemod under `upgrades/<version>/`.
 3. Keep `.sold/base-manifest.json` current when you add a top-level directory (a new Base directory that is not listed is _unowned_ and would not be replaced on upgrade).
-4. Tag `base-v<version>` on the commit whose tree is the release. Extension SDK breaking changes bump the major and are `[breaking]`.
+4. **Bump the first-party extensions' `requires.base`** (`extensions/*/package.json` `sold.requires.base` **and** the `requires.base` in each `defineExtension` call; discovery refuses a mismatch) together with `BASE_VERSION`. `first-party-compat.test.ts` fails the release commit if `BASE_VERSION` is outside any first-party range.
+5. Tag `base-v<version>` on the commit whose tree is the release. Extension SDK breaking changes bump the major and are `[breaking]`.
 
 ## Troubleshooting
 
@@ -119,3 +120,15 @@ Use `upgrade:check --patch-only` and `upgrade:plan <x.y.z> --patch-only`: the to
 | `drift:check` says it cannot compare against `origin/main`                | CI checked out with a shallow clone. Use `fetch-depth: 0`.                                                                                                                                                                                                                                   |
 | `upgrade:apply` gate fails after a clean plan                             | The upgrade is genuinely incompatible with the instance: read the failure, fix on the branch, run `upgrade:apply` again. Do not skip gates (`--skip-gates` exists for a laptop where they already ran).                                                                                      |
 | Lockfile changes after `upgrade:apply`                                    | Expected when extensions depend on packages Base changed; it is committed as `chore(upgrade): refresh lockfile`.                                                                                                                                                                             |
+
+## Rehearsal (Phase 8, local only)
+
+Not a real upgrade (no customer, no codemods, a throwaway upstream), but every command ran for real against real git:
+
+1. `customer:new acme` scaffolded a 32-file overlay; laid over a Base checkout it installs, `sold drift:check` passes for a customer-owned edit and fails (naming the file) for a Base-owned one.
+2. A scratch upstream with tags `base-v0.1.0` (the previous release) and `base-v0.2.0`; `upgrade:check` listed the tagged changelog entries.
+3. **It found two real problems, both fixed:** (a) `upgrade:check` judged first-party extensions by their _installed_ `requires.base`, but the upgrade replaces them, so every minor bump on 0.x blocked itself. Base-owned extensions are now reported as `replaced` and re-checked by `upgrade:apply` after replacement. (b) a release that bumped `package.json` ranges but not the manifests was refused by the discovery test, which is the gate working; the release procedure above now says to bump both.
+4. `upgrade:plan 0.2.0` produced `upgrade/base-v0.2.0` (824 Base files from the tag, 2 retired) and the report; `upgrade:apply` ran the gates (see the PROGRESS ledger for the final outcome).
+5. Separately, `ops/drills/n-minus-1.sh` proves the previous release's code runs on the new schema (rollback safety).
+
+**Not rehearsed:** a Base upgrade with real codemods, extension updates that need code changes, a customer database with real data volume, and the promotion `preview → dev → stage → prod` (needs a cloud).

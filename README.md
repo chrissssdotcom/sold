@@ -7,8 +7,10 @@ extensions kept in `extensions/` and `sold.config.ts`, so Base upgrades never co
 Read [`AGENTS.md`](AGENTS.md) first (principles, commands, conventions), then
 [`docs/adr/`](docs/adr) and [`docs/PROGRESS.md`](docs/PROGRESS.md) for what exists and what does not.
 
-> **Status: Phase 0 (foundations) and Phase 1 (extension framework) are built.** The storefront, checkout, payments,
-> identity and the rest are not. See `docs/PROGRESS.md` for an honest account of what is implemented, verified and pending.
+> **Status: Phases 0-7 are built; Phase 8 (hardening, scale proof, handover) is partly done.** A storefront with a page builder, checkout and
+> payments, accounts, a staff console, a public API, reporting, media, notifications, reviews and TikTok exist and are tested end to end
+> **on one machine**. Nothing has run on a cloud, and several integrations (Stripe, Postmark, TikTok, SSO providers, Grafana) have only run
+> against local fakes. [`docs/handover.md`](docs/handover.md) is the map; [`docs/PROGRESS.md`](docs/PROGRESS.md) is the honest ledger.
 
 ## Quickstart
 
@@ -24,13 +26,15 @@ pnpm dev                       # web on http://localhost:3000 (Grafana on :3030,
 Without Docker, point `DATABASE_URL` and `DATABASE_MIGRATION_URL` at any PostgreSQL 16 and skip Redis
 (the cache handler falls back to in-memory outside stage/prod).
 
-| Task                                                                                     | Command                                      |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Typecheck / lint / unit                                                                  | `pnpm typecheck` / `pnpm lint` / `pnpm test` |
-| Integration (needs Postgres; set `SOLD_TEST_DATABASE_URL`, or Docker for Testcontainers) | `pnpm test:integration`                      |
-| Migration safety lint                                                                    | `pnpm db:lint-migrations`                    |
-| Worker                                                                                   | `pnpm --filter @sold/web worker`             |
-| Load test smoke                                                                          | `k6 run ops/loadtests/baseline-browse.js`    |
+| Task                                                                                     | Command                                                                                                   |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Typecheck / lint / unit                                                                  | `pnpm typecheck` / `pnpm lint` / `pnpm test`                                                              |
+| Integration (needs Postgres; set `SOLD_TEST_DATABASE_URL`, or Docker for Testcontainers) | `pnpm test:integration`                                                                                   |
+| Migration safety lint                                                                    | `pnpm db:lint-migrations`                                                                                 |
+| Worker                                                                                   | `pnpm --filter @sold/web worker`                                                                          |
+| Load test smoke (k6) / Node load generator                                               | `k6 run ops/loadtests/baseline-browse.js` / `node ops/loadtests/node/load.mjs browse`                     |
+| End to end (needs a running server and an owner account)                                 | `pnpm --filter @sold/web test:e2e` with `SOLD_E2E_URL`, `SOLD_E2E_OWNER_EMAIL`, `SOLD_E2E_OWNER_PASSWORD` |
+| Drills: backup/restore, chaos, worker kill, N-1 on N, sale readiness                     | `ops/drills/*.sh` (local only; see `docs/chaos-drills.md`)                                                |
 
 ## Architecture
 

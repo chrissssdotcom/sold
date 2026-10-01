@@ -109,7 +109,7 @@ describe('processImage', () => {
     const bomb = await solid(9000, 9000).png({ compressionLevel: 9 }).toBuffer(); // 81 MP of one colour compresses to almost nothing
     expect(bomb.length).toBeLessThan(2_000_000);
     expect((await rejected(processImage(bomb)))!.code).toBe('too_many_pixels');
-  });
+  }, 30_000); // building an 81 MP PNG is the slow part (~1 s idle, >5 s when every core is busy)
 
   it('refuses oversize uploads', async () => {
     expect((await rejected(processImage(Buffer.alloc(13 * 1024 * 1024, 1))))!.code).toBe(

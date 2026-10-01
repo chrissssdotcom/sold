@@ -7,7 +7,7 @@ export interface ExtensionCompat {
   directory: string;
   /** `requires.base` semver range from the extension's package.json (`sold.requires.base`). */
   range: string | undefined;
-  status: 'compatible' | 'incompatible' | 'unknown';
+  status: 'compatible' | 'incompatible' | 'unknown' | 'replaced';
   reason?: string;
 }
 
@@ -20,6 +20,14 @@ export interface ExtensionCompat {
 export async function checkExtensionCompatibility(
   cwd: string,
   targetBase: string,
+  opts: {
+    /**
+     * Is this repository-relative path Base-owned? Base-owned extensions (the first-party ones) are REPLACED by the upgrade, so the
+     * installed copy's range says nothing about the target: judging it would make every minor bump on 0.x block itself. They are
+     * reported as `replaced`; `upgrade:apply` checks the replacement.
+     */
+    baseOwned?: (relativePath: string) => boolean;
+  } = {},
 ): Promise<ExtensionCompat[]> {
   let entries: string[];
   try {
@@ -40,7 +48,15 @@ export async function checkExtensionCompatibility(
     }
     const name = pkg.name ?? directory;
     const range = pkg.sold?.requires?.base;
-    if (range === undefined) {
+    if (opts.baseOwned?.(`extensions/${directory}/package.json`)) {
+      report.push({
+        name,
+        directory,
+        range,
+        status: 'replaced',
+        reason: 'Base-owned: replaced by the upgrade (checked again by upgrade:apply)',
+      });
+    } else if (range === undefined) {
       report.push({
         name,
         directory,

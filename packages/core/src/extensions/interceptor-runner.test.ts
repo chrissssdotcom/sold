@@ -418,7 +418,7 @@ describe('InterceptorRunner: results are read inside the guarded region', () => 
 
   it('invalid modifications count as failures, so a persistently invalid extension is bypassed', async () => {
     const { r, metrics } = runner(
-      [loaded('sloppy', 0, [{ handler: () => ({ modify: { quantity: -5 } }) }])],
+      [loaded('sloppy', 0, [{ handler: () => ({ modify: { quantity: -5 } }) }], 50)], // not a timing test: the largest budget a manifest allows keeps load from turning it into a timeout
       { breaker: { failureThreshold: 3, cooldownMs: 60_000 } },
     );
     for (let i = 0; i < 5; i++) await r.run('cart.item.adding', payload);
@@ -456,8 +456,9 @@ describe('InterceptorRunner: veto text is inert', () => {
 describe('InterceptorRunner: pools, budgets and breakers', () => {
   it('queue wait is not charged to the budget: a healthy 8ms interceptor never times out on a 1-slot pool', async () => {
     const { r, metrics } = runner(
-      [loaded('healthy', 0, [{ failPolicy: 'closed', handler: () => sleep(8) }], 20)],
-      { pool: new Semaphore('one', 1, 50), maxQueueWaitMs: 1_000 },
+      // 8 calls x 15 ms through one slot: the last waits ~105 ms, longer than the 50 ms budget, yet none may time out (each runs 15 ms)
+      [loaded('healthy', 0, [{ failPolicy: 'closed', handler: () => sleep(15) }], 50)],
+      { pool: new Semaphore('one', 1, 50), maxQueueWaitMs: 5_000 },
     );
     await Promise.all(Array.from({ length: 8 }, () => r.run('cart.item.adding', payload)));
     expect(metrics.map((m) => m.outcome)).toEqual(Array(8).fill('ok'));
@@ -580,7 +581,7 @@ describe('InterceptorRunner: a blocked event loop is detected, attributed and cu
   it('a stall under 5x the budget is discarded and counted as a normal failure only', async () => {
     let calls = 0;
     const { r, metrics } = runner(
-      [loaded('stall', 0, [{ handler: () => (calls++, busy(25)) }], 10)],
+      [loaded('stall', 0, [{ handler: () => (calls++, busy(40)) }], 20)], // 2x the budget, 60 ms under the 5x cut-off even if the process is descheduled
       { breaker: { failureThreshold: 5, cooldownMs: 60_000 } },
     );
     await r.run('cart.item.adding', payload);

@@ -72,8 +72,11 @@ afterAll(async () => {
 
 describe('extensions on real infrastructure', () => {
   it('the generated registry and the kernel agree on what is loaded', () => {
-    expect(kernel.extensions.map((e) => e.manifest.name)).toEqual(['loyalty-points']);
-    expect(kernel.describe().order).toEqual(['loyalty-points@1.0.0']);
+    // sold.config.ts enables the three first-party extensions; the kernel must load exactly what the generated registry holds.
+    const names = kernel.extensions.map((e) => e.manifest.name);
+    expect([...names].sort()).toEqual(['loyalty-points', 'reviews', 'tiktok-social']);
+    expect(kernel.describe().order.map((o) => o.split('@')[0])).toEqual(names);
+    expect(kernel.describe().order).toContain('loyalty-points@1.0.0');
   });
 
   it('order.placed reaches the observer through pg-boss and is applied exactly once', async () => {

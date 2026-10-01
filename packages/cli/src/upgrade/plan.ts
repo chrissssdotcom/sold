@@ -141,7 +141,9 @@ export async function upgradePlan(
   const changes = changelogText
     ? groupByTag(entriesBetween(parseChangelog(changelogText), from, to))
     : undefined;
-  const extensions = await checkExtensionCompatibility(ctx.cwd, to);
+  const extensions = await checkExtensionCompatibility(ctx.cwd, to, {
+    baseOwned: (path) => matchesAny(path, manifest.baseOwned),
+  });
   const reportPath = `docs/instance/upgrades/${to}.md`;
 
   if (ctx.dryRun) {
