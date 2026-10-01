@@ -27,10 +27,12 @@ export interface AdminContext extends RouteContext {
 export function adminRoute(
   permission: string | null,
   handler: (request: Request, ctx: AdminContext) => Promise<Response>,
+  opts: { binaryBody?: boolean } = {},
 ): (request: Request) => Promise<Response> {
   return route(async (request, ctx) => {
     try {
-      assertSameOrigin(request);
+      // Same-origin is always required; `binaryBody` only relaxes the JSON content-type rule for file uploads.
+      assertSameOrigin(request, opts.binaryBody ? { requireJson: false } : {});
       const session = await currentSession(request.headers.get('cookie'), 'staff');
       if (!session) throw new UnauthenticatedError();
       if (permission && !can(session.user.permissions, permission))

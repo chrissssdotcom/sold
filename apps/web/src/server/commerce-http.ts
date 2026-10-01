@@ -87,3 +87,24 @@ export function errorResponse(error: unknown): Response {
     );
   throw error;
 }
+
+/** Read a request body as bytes with a hard limit enforced while streaming (Content-Length is advisory). */
+export async function readBytes(request: Request, maxBytes: number): Promise<Buffer> {
+  if (Number(request.headers.get('content-length') ?? '0') > maxBytes)
+    throw new BodyTooLargeError();
+  if (!request.body) throw new BadJsonError();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new BodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}

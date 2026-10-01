@@ -20,3 +20,4 @@ test-fixtures/isr-app/next-env.d.ts
 tfplan
 *.tfplan
 dump.rdb
+.data/

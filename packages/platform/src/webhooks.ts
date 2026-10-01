@@ -104,7 +104,7 @@ export class WebhookService {
       const body = JSON.stringify(row.payload);
       const t = Math.floor(Date.now() / 1000);
       let status: number | null = null;
-      let error: string | null = null;
+      let error: string;
       try {
         const secret = this.crypto.decrypt(row.secret_enc, 'webhook-secret');
         const r = await this.fetchImpl(

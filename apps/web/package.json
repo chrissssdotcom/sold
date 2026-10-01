@@ -35,6 +35,7 @@
     "@sold/extension-sdk": "workspace:*",
     "@sold/identity": "workspace:*",
     "@sold/jobs": "workspace:*",
+    "@sold/media": "workspace:*",
     "@sold/notify": "workspace:*",
     "@sold/payments": "workspace:*",
     "@sold/platform": "workspace:*",

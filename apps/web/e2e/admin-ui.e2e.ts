@@ -77,6 +77,7 @@ run('admin console', () => {
         '/admin/theme',
         '/admin/users',
         '/admin/flags',
+        '/admin/media',
         '/admin/developers',
         '/admin/extensions',
         '/admin/audit',

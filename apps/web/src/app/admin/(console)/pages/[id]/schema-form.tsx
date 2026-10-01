@@ -1,5 +1,6 @@
 'use client';
 import { useId, useState } from 'react';
+import { MediaLibrary } from '../../media/library';
 
 /** The subset of JSON Schema that Zod emits for block props. Anything outside it falls back to a JSON editor, never to silent loss. */
 export interface JSchema {
@@ -91,6 +92,16 @@ export function SchemaForm({ schema, value, onChange, label, required = true, de
       </div>
     );
   }
+
+  if (type === 'string' && /image/i.test(lab) && !/alt/i.test(lab))
+    return (
+      <ImageField
+        id={id}
+        label={lab}
+        value={typeof value === 'string' ? value : ''}
+        onChange={onChange}
+      />
+    );
 
   if (type === 'string') {
     const long = (schema.maxLength ?? 0) > 140;
@@ -303,4 +314,41 @@ function swap<T>(a: T[], i: number, j: number): T[] {
   const out = [...a];
   [out[i], out[j]] = [out[j]!, out[i]!];
   return out;
+}
+
+/** An image URL field: type a path/URL, or pick from the media library (which fills in a good WebP rendition). */
+function ImageField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange(v: unknown): void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} />
+      <div className="row">
+        <button type="button" className="btn sm" onClick={() => setOpen(!open)}>
+          {open ? 'Close library' : 'Choose from library'}
+        </button>
+      </div>
+      {open ? (
+        <div style={{ maxHeight: 360, overflow: 'auto', marginTop: 8 }}>
+          <MediaLibrary
+            canWrite={false}
+            onPick={(a) => {
+              onChange(a.url);
+              setOpen(false);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
 }

@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 const id = () =>
@@ -59,5 +69,26 @@ export const webhookDeliveries = pgTable(
       .on(t.availableAt)
       .where(sql`${t.status} in ('pending', 'delivering')`),
     index('webhook_deliveries_endpoint_idx').on(t.endpointId, t.createdAt.desc()),
+  ],
+);
+
+export const mediaAssets = pgTable(
+  'media_assets',
+  {
+    id: id(),
+    sha256: text('sha256').notNull(),
+    originalName: text('original_name').notNull(),
+    mime: text('mime').notNull(),
+    bytes: integer('bytes').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    alt: text('alt').notNull().default(''),
+    variants: jsonb('variants').notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique('media_assets_sha256_key').on(t.sha256),
+    index('media_assets_created_idx').on(t.createdAt.desc(), t.id.desc()),
   ],
 );
