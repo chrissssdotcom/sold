@@ -54,7 +54,7 @@ export const POST = route(async (request) => {
       { status: replayed ? 200 : 201, headers: PRIVATE },
     );
   } catch (error) {
-    metrics.checkout.inc({ outcome: error instanceof CommerceError ? error.code : 'error' });
+    metrics.checkout.inc({ outcome: CommerceError.is(error) ? error.code : 'error' });
     return errorResponse(error);
   } finally {
     metrics.checkoutDuration.observe((performance.now() - started) / 1000);

@@ -2,7 +2,21 @@
  * Domain errors carry a stable machine-readable `code` (safe to show storefronts) and an HTTP-ish
  * `status`, so route handlers map them without string matching.
  */
+const BRAND = Symbol.for('sold.commerce-error');
+
 export class CommerceError extends Error {
+  /**
+   * Brand check that survives duplicated module instances (a bundler can load this file twice, one copy per route
+   * graph), where `instanceof` silently fails and a clean 401 turns into a 500.
+   */
+  static is(error: unknown): error is CommerceError {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as Record<symbol, unknown>)[BRAND] === true
+    );
+  }
+  readonly [BRAND] = true;
   constructor(
     readonly code: string,
     message: string,

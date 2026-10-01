@@ -1,4 +1,5 @@
 import { CommerceError } from '@sold/commerce';
+import { InvalidTreeError } from '@sold/content';
 import { ZodError } from 'zod';
 
 export class BodyTooLargeError extends Error {}
@@ -42,7 +43,7 @@ export function json(body: unknown, init?: ResponseInit): Response {
 
 /** Map domain and input errors to stable machine-readable responses. Anything else is rethrown (500, no leak). */
 export function errorResponse(error: unknown): Response {
-  if (error instanceof CommerceError) {
+  if (CommerceError.is(error)) {
     // Lockouts tell the client when to come back.
     const retry = (error as { retryAfterSeconds?: number }).retryAfterSeconds;
     return json(
@@ -67,6 +68,11 @@ export function errorResponse(error: unknown): Response {
           },
         },
       },
+      { status: 422 },
+    );
+  if (error instanceof InvalidTreeError)
+    return json(
+      { error: { code: error.code, message: error.message, details: { issues: error.issues } } },
       { status: 422 },
     );
   if (error instanceof BodyTooLargeError)
