@@ -11,7 +11,7 @@ import {
   type DiscoveryResult,
 } from '@sold/core/extensions/discovery';
 import { createLogger } from '@sold/core/observability';
-import { createDb, type Db } from '@sold/db';
+import { createDb, syncReportingViews, type Db, type PrimaryDb } from '@sold/db';
 import { migrateExtension } from '@sold/db/extension-migrations';
 import { PgBossQueue } from '@sold/jobs';
 import type { CliContext } from '../lib/context';
@@ -19,6 +19,8 @@ import { CliError, ExitCode } from '../lib/errors';
 
 export interface MigrateHandle {
   kernel: Kernel;
+  /** Primary handle (owner privileges), for release-time steps such as syncing reporting views. Absent in test fakes. */
+  db?: PrimaryDb;
   close(): Promise<void>;
 }
 
@@ -65,6 +67,7 @@ export const realKernelFactory: KernelFactory = async (ctx, found) => {
   await kernel.declareQueues();
   return {
     kernel,
+    db: db.primary,
     close: async () => {
       await queue.stop({ timeoutMs: 5_000 });
       await db.close();
@@ -107,6 +110,23 @@ export async function extMigrate(
     ctx.out.info(
       parts.length === 0 ? 'extensions: no lifecycle changes' : `extensions: ${parts.join('; ')}`,
     );
+    // Reporting views declared by enabled extensions: validated (own tables only, plain SELECT), created, and removed when gone.
+    if (handle.db) {
+      const enabled = new Set(found.entries.filter((e) => e.enabled).map((e) => e.name));
+      const report = await syncReportingViews(
+        handle.db,
+        found.extensions
+          .filter((e) => enabled.has(e.name))
+          .flatMap((e) =>
+            e.manifest.reportingViews.map((v) => ({ extension: e.name, name: v.name, sql: v.sql })),
+          ),
+      );
+      if (report.created.length > 0) ctx.out.info(`reporting views: ${report.created.join(', ')}`);
+      if (report.dropped.length > 0)
+        ctx.out.info(`reporting views removed: ${report.dropped.join(', ')}`);
+      for (const r of report.rejected)
+        ctx.out.warn(`reporting view ${r.view} rejected: ${r.issues.join('; ')}`);
+    }
   } finally {
     await handle.close();
   }

@@ -8,6 +8,7 @@ import { extList } from './ext/list';
 import { extMigrate } from './ext/migrate';
 import { extNew } from './ext/scaffold';
 import { themeList, themeNew } from './theme/scaffold';
+import { reportingEnableLogin } from './reporting/role';
 import { userCreateOwner } from './user/owner';
 import { extSync } from './ext/sync';
 import {
@@ -304,6 +305,16 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
     .action(
       action(async (context, options: { email: string; name?: string }) => {
         await userCreateOwner(context, options);
+      }),
+    );
+
+  // ---- reporting -----------------------------------------------------------------------------
+  program
+    .command('reporting:enable-login')
+    .description('set the login password of the read-only reporting role from GRAFANA_DB_PASSWORD')
+    .action(
+      action(async (context) => {
+        await reportingEnableLogin(context);
       }),
     );
 

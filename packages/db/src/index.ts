@@ -24,3 +24,4 @@ export { migrate, loadMigrations, type MigrateOptions, type MigrateResult } from
 export * from './extension-access';
 export * from './extension-roles';
 export * from './extension-db';
+export * from './reporting-views';
