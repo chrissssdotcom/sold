@@ -57,3 +57,8 @@ export function adminRoute(
 }
 
 export { can };
+
+/** For handlers whose permission depends on the request body (e.g. going live, cancelling). Same primitive, same error. */
+export function requireCan(user: ResolvedUser, permission: string): void {
+  if (!can(user.permissions, permission)) throw new ForbiddenError(permission);
+}
