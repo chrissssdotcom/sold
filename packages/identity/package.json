@@ -1,0 +1,27 @@
+{
+  "name": "@sold/identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration"
+  },
+  "dependencies": {
+    "@sold/commerce": "workspace:*",
+    "@sold/core": "workspace:*",
+    "@sold/db": "workspace:*",
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sold/config": "workspace:*",
+    "@sold/testing": "workspace:*",
+    "vitest": "^5.0.3"
+  }
+}
